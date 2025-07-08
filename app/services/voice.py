@@ -1,6 +1,8 @@
 import asyncio
 import os
 import re
+import base64
+import json
 from datetime import datetime
 from typing import Union
 from xml.sax.saxutils import unescape
@@ -1077,6 +1079,138 @@ def is_siliconflow_voice(voice_name: str):
     return voice_name.startswith("siliconflow:")
 
 
+def google_gemini_tts(
+    text: str, 
+    voice_name: str, 
+    voice_rate: float = 1.0, 
+    voice_file: str = None,
+    voice_volume: float = 1.0
+) -> Union[SubMaker, None]:
+    """
+    Generate speech using Google Gemini API
+    
+    Args:
+        text: The text to convert to speech
+        voice_name: The voice name, e.g. "natural", "casual", "expressive"
+        voice_rate: Speech rate (not directly supported by Gemini API)
+        voice_file: Path to the output audio file
+        voice_volume: Volume adjustment (not directly supported by Gemini API)
+        
+    Returns:
+        SubMaker object or None on failure
+    """
+    try:
+        api_key = config.google_gemini.get("api_key", "")
+        model = config.google_gemini.get("model_name", "gemini-2.5-flash")
+        
+        if not api_key:
+            logger.error("Google Gemini API key not configured")
+            return None
+            
+        if not voice_file:
+            voice_file = utils.storage_dir("temp", create=True)
+            voice_file = os.path.join(voice_file, f"gemini_tts_{datetime.now().strftime('%Y%m%d%H%M%S')}.mp3")
+            
+        # If voice_name is not provided, use "natural" as default
+        if not voice_name:
+            voice_name = "natural"
+            
+        # Base URL for Gemini API
+        base_url = "https://generativelanguage.googleapis.com/v1beta/models"
+        model_endpoint = f"{model}:generateContent"
+        
+        # Create API URL with key
+        api_url = f"{base_url}/{model_endpoint}?key={api_key}"
+        
+        # Prepare the payload
+        payload = {
+            "contents": [{
+                "parts": [{
+                    "text": f"Generate speech for the following text: {text}"
+                }]
+            }],
+            "generationConfig": {
+                "response_modalities": ["AUDIO"],
+                "speech_config": {
+                    "voice_config": {
+                        "prebuilt_voice_config": {
+                            "voice_name": voice_name
+                        }
+                    }
+                }
+            }
+        }
+        
+        logger.info(f"Calling Google Gemini TTS API with model: {model}, voice: {voice_name}")
+        
+        # Make the API call
+        response = requests.post(
+            api_url,
+            headers={"Content-Type": "application/json"},
+            json=payload,
+            timeout=60
+        )
+        
+        if not response.ok:
+            logger.error(f"Google Gemini TTS API error: {response.status_code}, {response.text}")
+            return None
+            
+        # Parse the response
+        response_data = response.json()
+        
+        # Extract the audio data
+        try:
+            audio_data = response_data["candidates"][0]["content"]["parts"][0]["audio_data"]
+        except (KeyError, IndexError) as e:
+            logger.error(f"Failed to extract audio data from Gemini response: {e}")
+            logger.debug(f"Response structure: {json.dumps(response_data, indent=2)}")
+            return None
+            
+        # Decode the base64 audio data and write to file
+        with open(voice_file, "wb") as f:
+            f.write(base64.b64decode(audio_data))
+            
+        logger.info(f"Google Gemini TTS completed, output file: {voice_file}")
+        
+        # Create a basic SubMaker object for compatibility
+        # Note: Gemini doesn't provide word timing information like Azure
+        sub_maker = SubMaker()
+        # Add a single entry covering the entire audio
+        # We'd need to estimate duration, for now just use a placeholder
+        # In a real implementation, we could analyze the audio file to get duration
+        estimated_duration = len(text) * 100  # Rough estimation of duration in ms
+        sub_maker.create_sub((0, estimated_duration), text)
+        
+        return sub_maker
+        
+    except Exception as e:
+        logger.error(f"Google Gemini TTS error: {str(e)}")
+        return None
+
+
+def get_google_gemini_voices() -> list[str]:
+    """
+    Get a list of available Google Gemini voices
+    
+    Returns:
+        Voice list, format is ["gemini:natural-Natural", "gemini:casual-Casual", ...]
+    """
+    # Define the list of available voices and their display names
+    voices_with_display = [
+        ("natural", "Natural"),
+        ("casual", "Casual"),
+        ("expressive", "Expressive")
+    ]
+    
+    # Format the voices with gemini: prefix
+    return [f"gemini:{voice}-{display}" for voice, display in voices_with_display]
+
+
+def is_google_gemini_voice(voice_name: str):
+    """Check if it's a Google Gemini voice"""
+    return voice_name.startswith("gemini:")
+
+
 def tts(
     text: str,
     voice_name: str,
@@ -1102,6 +1236,18 @@ def tts(
             )
         else:
             logger.error(f"Invalid siliconflow voice name format: {voice_name}")
+            return None
+    elif is_google_gemini_voice(voice_name):
+        # Format: gemini:voice_name (e.g., gemini:natural)
+        parts = voice_name.split(":")
+        if len(parts) >= 2:
+            # Extract the actual voice name (e.g., natural, casual, expressive)
+            gemini_voice = parts[1]
+            return google_gemini_tts(
+                text, gemini_voice, voice_rate, voice_file, voice_volume
+            )
+        else:
+            logger.error(f"Invalid Google Gemini voice name format: {voice_name}")
             return None
     return azure_tts_v1(text, voice_name, voice_rate, voice_file)
 

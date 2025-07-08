@@ -190,44 +190,44 @@ with st.sidebar:
 
     # LLM Configuration
     st.subheader("🧠 " + tr("LLM Settings"))
-    llm_providers = [
-        "OpenAI",
-        "Moonshot",
-        "Azure",
-        "Qwen",
-        "DeepSeek",
-        "Gemini",
-        "Ollama",
-        "G4f",
-        "OneAPI",
-        "Cloudflare",
-        "ERNIE",
-        "Pollinations",
-    ]
-    saved_llm_provider = config.app.get("llm_provider", "OpenAI").lower()
-    saved_llm_provider_index = 0
-    for i, provider in enumerate(llm_providers):
-        if provider.lower() == saved_llm_provider:
-            saved_llm_provider_index = i
-            break
+            llm_providers = [
+                "OpenAI",
+                "Moonshot",
+                "Azure",
+                "Qwen",
+                "DeepSeek",
+                "Gemini",
+                "Ollama",
+                "G4f",
+                "OneAPI",
+                "Cloudflare",
+                "ERNIE",
+                "Pollinations",
+            ]
+            saved_llm_provider = config.app.get("llm_provider", "OpenAI").lower()
+            saved_llm_provider_index = 0
+            for i, provider in enumerate(llm_providers):
+                if provider.lower() == saved_llm_provider:
+                    saved_llm_provider_index = i
+                    break
 
-    llm_provider = st.selectbox(
-        tr("LLM Provider"),
-        options=llm_providers,
-        index=saved_llm_provider_index,
-    )
+            llm_provider = st.selectbox(
+                tr("LLM Provider"),
+                options=llm_providers,
+                index=saved_llm_provider_index,
+            )
     
-    llm_provider = llm_provider.lower()
-    config.app["llm_provider"] = llm_provider
+            llm_provider = llm_provider.lower()
+            config.app["llm_provider"] = llm_provider
 
-    llm_api_key = config.app.get(f"{llm_provider}_api_key", "")
-    llm_secret_key = config.app.get(
-        f"{llm_provider}_secret_key", ""
-    )  # only for baidu ernie
-    llm_base_url = config.app.get(f"{llm_provider}_base_url", "")
-    llm_model_name = config.app.get(f"{llm_provider}_model_name", "")
-    llm_account_id = config.app.get(f"{llm_provider}_account_id", "")
-    
+            llm_api_key = config.app.get(f"{llm_provider}_api_key", "")
+            llm_secret_key = config.app.get(
+                f"{llm_provider}_secret_key", ""
+            )  # only for baidu ernie
+            llm_base_url = config.app.get(f"{llm_provider}_base_url", "")
+            llm_model_name = config.app.get(f"{llm_provider}_model_name", "")
+            llm_account_id = config.app.get(f"{llm_provider}_account_id", "")
+
     st_llm_api_key = st.text_input(
         tr("API Key"), value=llm_api_key, type="password"
     )
@@ -235,10 +235,10 @@ with st.sidebar:
     st_llm_base_url = st.text_input(tr("Base Url"), value=llm_base_url)
     
     # Dynamic model selection for Gemini
-    if llm_provider == "gemini":
-        if not llm_model_name:
-            llm_model_name = "gemini-1.0-pro"
-        
+            if llm_provider == "gemini":
+                if not llm_model_name:
+                    llm_model_name = "gemini-1.0-pro"
+
         # If API key is provided, try to get available models
         if st_llm_api_key:
             try:
@@ -285,14 +285,14 @@ with st.sidebar:
                     value=llm_model_name,
                     key=f"{llm_provider}_model_name_input"
                 )
-        else:
+            else:
             st_llm_model_name = st.text_input(
                 tr("Model Name"),
                 value=llm_model_name,
                 key=f"{llm_provider}_model_name_input"
             )
     elif llm_provider == "ernie":
-        st_llm_model_name = None
+                st_llm_model_name = None
         st_llm_secret_key = st.text_input(
             tr("Secret Key"), value=llm_secret_key, type="password"
         )
@@ -305,140 +305,178 @@ with st.sidebar:
         )
     
     # Save config values
-    if st_llm_api_key:
-        config.app[f"{llm_provider}_api_key"] = st_llm_api_key
-    if st_llm_base_url:
-        config.app[f"{llm_provider}_base_url"] = st_llm_base_url
-    if st_llm_model_name:
-        config.app[f"{llm_provider}_model_name"] = st_llm_model_name
-    
-    if llm_provider == "cloudflare":
-        st_llm_account_id = st.text_input(
-            tr("Account ID"), value=llm_account_id
-        )
-        if st_llm_account_id:
-            config.app[f"{llm_provider}_account_id"] = st_llm_account_id
+            if st_llm_api_key:
+                config.app[f"{llm_provider}_api_key"] = st_llm_api_key
+            if st_llm_base_url:
+                config.app[f"{llm_provider}_base_url"] = st_llm_base_url
+            if st_llm_model_name:
+                config.app[f"{llm_provider}_model_name"] = st_llm_model_name
+
+            if llm_provider == "cloudflare":
+                st_llm_account_id = st.text_input(
+                    tr("Account ID"), value=llm_account_id
+                )
+                if st_llm_account_id:
+                    config.app[f"{llm_provider}_account_id"] = st_llm_account_id
 
     # API Keys for video sources
     st.subheader("🎬 " + tr("Video Source Settings"))
-    
-    def get_keys_from_config(cfg_key):
-        api_keys = config.app.get(cfg_key, [])
-        if isinstance(api_keys, str):
-            api_keys = [api_keys]
-        api_key = ", ".join(api_keys)
-        return api_key
 
-    def save_keys_to_config(cfg_key, value):
-        value = value.replace(" ", "")
-        if value:
-            config.app[cfg_key] = value.split(",")
+            def get_keys_from_config(cfg_key):
+                api_keys = config.app.get(cfg_key, [])
+                if isinstance(api_keys, str):
+                    api_keys = [api_keys]
+                api_key = ", ".join(api_keys)
+                return api_key
 
-    pexels_api_key = get_keys_from_config("pexels_api_keys")
-    pexels_api_key = st.text_input(
-        tr("Pexels API Key"), value=pexels_api_key, type="password"
-    )
-    save_keys_to_config("pexels_api_keys", pexels_api_key)
+            def save_keys_to_config(cfg_key, value):
+                value = value.replace(" ", "")
+                if value:
+                    config.app[cfg_key] = value.split(",")
 
-    pixabay_api_key = get_keys_from_config("pixabay_api_keys")
-    pixabay_api_key = st.text_input(
-        tr("Pixabay API Key"), value=pixabay_api_key, type="password"
-    )
-    save_keys_to_config("pixabay_api_keys", pixabay_api_key)
+            pexels_api_key = get_keys_from_config("pexels_api_keys")
+            pexels_api_key = st.text_input(
+                tr("Pexels API Key"), value=pexels_api_key, type="password"
+            )
+            save_keys_to_config("pexels_api_keys", pexels_api_key)
+
+            pixabay_api_key = get_keys_from_config("pixabay_api_keys")
+            pixabay_api_key = st.text_input(
+                tr("Pixabay API Key"), value=pixabay_api_key, type="password"
+            )
+            save_keys_to_config("pixabay_api_keys", pixabay_api_key)
 
     # Voice Settings
     st.subheader("🔊 " + tr("Voice Settings"))
     
     # TTS server selection
-    tts_servers = [
-        ("azure-tts-v1", "Azure TTS V1"),
-        ("azure-tts-v2", "Azure TTS V2"),
-        ("siliconflow", "SiliconFlow TTS"),
-    ]
+        tts_servers = [
+            ("azure-tts-v1", "Azure TTS V1"),
+            ("azure-tts-v2", "Azure TTS V2"),
+            ("siliconflow", "SiliconFlow TTS"),
+            ("google-gemini", "Google Gemini TTS"),
+        ]
 
     # Get saved TTS server, default is v1
-    saved_tts_server = config.ui.get("tts_server", "azure-tts-v1")
-    saved_tts_server_index = 0
-    for i, (server_value, _) in enumerate(tts_servers):
-        if server_value == saved_tts_server:
-            saved_tts_server_index = i
-            break
-
-    selected_tts_server_index = st.selectbox(
-        tr("TTS Servers"),
-        options=range(len(tts_servers)),
-        format_func=lambda x: tts_servers[x][1],
-        index=saved_tts_server_index,
-    )
-
-    selected_tts_server = tts_servers[selected_tts_server_index][0]
-    config.ui["tts_server"] = selected_tts_server
-
-    # Get voice list based on selected TTS server
-    filtered_voices = []
-
-    if selected_tts_server == "siliconflow":
-        # Get Silicon Flow voice list
-        filtered_voices = voice.get_siliconflow_voices()
-    else:
-        # Get Azure voice list
-        all_voices = voice.get_all_azure_voices(filter_locals=None)
-
-        # Filter voices based on selected TTS server
-        for v in all_voices:
-            if selected_tts_server == "azure-tts-v2":
-                # V2 version voice name contains "v2"
-                if "V2" in v:
-                    filtered_voices.append(v)
-            else:
-                # V1 version voice name does not contain "v2"
-                if "V2" not in v:
-                    filtered_voices.append(v)
-
-    friendly_names = {
-        v: v.replace("Female", tr("Female"))
-        .replace("Male", tr("Male"))
-        .replace("Neural", "")
-        for v in filtered_voices
-    }
-
-    saved_voice_name = config.ui.get("voice_name", "")
-    saved_voice_name_index = 0
-
-    # Check if saved voice is in current filtered voice list
-    if saved_voice_name in friendly_names:
-        saved_voice_name_index = list(friendly_names.keys()).index(saved_voice_name)
-    else:
-        # If not, select a default voice based on current UI language
-        for i, v in enumerate(filtered_voices):
-            if v.lower().startswith(st.session_state["ui_language"].lower()):
-                saved_voice_name_index = i
+        saved_tts_server = config.ui.get("tts_server", "azure-tts-v1")
+        saved_tts_server_index = 0
+        for i, (server_value, _) in enumerate(tts_servers):
+            if server_value == saved_tts_server:
+                saved_tts_server_index = i
                 break
 
-    # If no matching voice found, use the first voice
-    if saved_voice_name_index >= len(friendly_names) and friendly_names:
+        selected_tts_server_index = st.selectbox(
+            tr("TTS Servers"),
+            options=range(len(tts_servers)),
+            format_func=lambda x: tts_servers[x][1],
+            index=saved_tts_server_index,
+        )
+
+        selected_tts_server = tts_servers[selected_tts_server_index][0]
+        config.ui["tts_server"] = selected_tts_server
+
+    # Get voice list based on selected TTS server
+        filtered_voices = []
+
+        if selected_tts_server == "siliconflow":
+            # Get Silicon Flow voice list
+            filtered_voices = voice.get_siliconflow_voices()
+        elif selected_tts_server == "google-gemini":
+            # Get Google Gemini voice list
+            filtered_voices = voice.get_google_gemini_voices()
+        else:
+            # Get Azure voice list
+            all_voices = voice.get_all_azure_voices(filter_locals=None)
+
+            # Filter voices based on selected TTS server
+            for v in all_voices:
+                if selected_tts_server == "azure-tts-v2":
+                    # V2 version voice name contains "v2"
+                    if "V2" in v:
+                        filtered_voices.append(v)
+                else:
+                    # V1 version voice name does not contain "v2"
+                    if "V2" not in v:
+                        filtered_voices.append(v)
+
+        friendly_names = {
+            v: v.replace("Female", tr("Female"))
+            .replace("Male", tr("Male"))
+            .replace("Neural", "")
+            for v in filtered_voices
+        }
+
+        saved_voice_name = config.ui.get("voice_name", "")
         saved_voice_name_index = 0
 
+    # Check if saved voice is in current filtered voice list
+        if saved_voice_name in friendly_names:
+            saved_voice_name_index = list(friendly_names.keys()).index(saved_voice_name)
+        else:
+        # If not, select a default voice based on current UI language
+            for i, v in enumerate(filtered_voices):
+                if v.lower().startswith(st.session_state["ui_language"].lower()):
+                    saved_voice_name_index = i
+                    break
+
+    # If no matching voice found, use the first voice
+        if saved_voice_name_index >= len(friendly_names) and friendly_names:
+            saved_voice_name_index = 0
+
     # Ensure there are voices available
-    if friendly_names:
-        selected_friendly_name = st.selectbox(
-            tr("Voice"),
-            options=list(friendly_names.keys()),
-            format_func=lambda x: friendly_names[x],
-            index=min(saved_voice_name_index, len(friendly_names) - 1),
-        )
-        voice_name = selected_friendly_name
-        config.ui["voice_name"] = voice_name
-    else:
-        # If no voices available, show prompt message
-        st.warning(
-            tr(
+        if friendly_names:
+            col1, col2 = st.columns([3, 1])
+            
+            with col1:
+                selected_friendly_name = st.selectbox(
+                tr("Voice"),
+                options=list(friendly_names.keys()),
+                format_func=lambda x: friendly_names[x],
+                index=min(saved_voice_name_index, len(friendly_names) - 1),
+                )
+                voice_name = selected_friendly_name
+                config.ui["voice_name"] = voice_name
+                
+            with col2:
+                preview_button = st.button("🔊 " + tr("Preview"), use_container_width=True)
+                
+            # Handle voice preview functionality
+            if preview_button and voice_name:
+                with st.spinner(f"Generating preview for {friendly_names.get(voice_name, voice_name)}..."):
+                    try:
+                        # Define sample text for preview
+                        sample_text = tr("Hello, this is a preview of my voice for the UnQTube2 project.")
+                        
+                        # Create a temporary file for the audio
+                        preview_file = utils.storage_dir("temp", create=True)
+                        preview_file = os.path.join(preview_file, f"voice_preview_{datetime.now().strftime('%Y%m%d%H%M%S')}.mp3")
+                        
+                        # Generate preview audio using the same TTS function used in video generation
+                        sub_maker = voice.tts(
+                            text=sample_text,
+                            voice_name=voice_name,
+                            voice_rate=voice_rate,
+                            voice_file=preview_file,
+                            voice_volume=voice_volume
+                        )
+                        
+                        if os.path.exists(preview_file):
+                            # Display an audio player with the preview
+                            st.audio(preview_file)
+                        else:
+                            st.error(tr("Failed to generate voice preview."))
+                    except Exception as e:
+                        st.error(f"Error generating voice preview: {str(e)}")
+        else:
+            # If no voices available, show prompt message
+            st.warning(
+                tr(
                 "No voices available for the selected TTS server. "
                 "Please select a different TTS server."
+                )
             )
-        )
-        voice_name = ""
-        config.ui["voice_name"] = ""
+            voice_name = ""
+            config.ui["voice_name"] = ""
 
     # Speech rate and volume
     voice_rate = st.select_slider(
@@ -454,35 +492,62 @@ with st.sidebar:
     )
     
     # TTS API settings based on selected service
-    if selected_tts_server == "azure-tts-v2" or (
-        voice_name and voice.is_azure_v2_voice(voice_name)
-    ):
-        saved_azure_speech_region = config.azure.get("speech_region", "")
-        saved_azure_speech_key = config.azure.get("speech_key", "")
+        if selected_tts_server == "azure-tts-v2" or (
+            voice_name and voice.is_azure_v2_voice(voice_name)
+        ):
+            saved_azure_speech_region = config.azure.get("speech_region", "")
+            saved_azure_speech_key = config.azure.get("speech_key", "")
 
-        azure_speech_region = st.text_input(
+            azure_speech_region = st.text_input(
             tr("Azure Speech Region"), value=saved_azure_speech_region
-        )
-        azure_speech_key = st.text_input(
+            )
+            azure_speech_key = st.text_input(
             tr("Azure Speech API Key"), 
-            value=saved_azure_speech_key, 
+                value=saved_azure_speech_key,
             type="password"
-        )
+            )
 
-        config.azure["speech_region"] = azure_speech_region
-        config.azure["speech_key"] = azure_speech_key
+            config.azure["speech_region"] = azure_speech_region
+            config.azure["speech_key"] = azure_speech_key
 
-    if selected_tts_server == "siliconflow" or (
-        voice_name and voice.is_siliconflow_voice(voice_name)
-    ):
-        saved_siliconflow_api_key = config.siliconflow.get("api_key", "")
-        siliconflow_api_key = st.text_input(
-            tr("SiliconFlow API Key"),
-            value=saved_siliconflow_api_key,
-            type="password",
-            key="siliconflow_api_key_input",
-        )
-        config.siliconflow["api_key"] = siliconflow_api_key
+        if selected_tts_server == "siliconflow" or (
+            voice_name and voice.is_siliconflow_voice(voice_name)
+        ):
+            saved_siliconflow_api_key = config.siliconflow.get("api_key", "")
+            siliconflow_api_key = st.text_input(
+                tr("SiliconFlow API Key"),
+                value=saved_siliconflow_api_key,
+                type="password",
+                key="siliconflow_api_key_input",
+            )
+            config.siliconflow["api_key"] = siliconflow_api_key
+            
+        if selected_tts_server == "google-gemini" or (
+            voice_name and voice.is_google_gemini_voice(voice_name)
+        ):
+            # Check if google_gemini config exists, initialize if not
+            if not hasattr(config, "google_gemini"):
+                config.google_gemini = {}
+                
+            saved_gemini_api_key = config.google_gemini.get("api_key", "")
+            gemini_api_key = st.text_input(
+                tr("Google Gemini API Key"),
+                value=saved_gemini_api_key,
+                type="password",
+                key="gemini_api_key_input",
+            )
+            config.google_gemini["api_key"] = gemini_api_key
+            
+            # Model selection
+            gemini_models = ["gemini-2.5-flash", "gemini-2.5-pro"]
+            saved_gemini_model = config.google_gemini.get("model_name", "gemini-2.5-flash")
+            gemini_model = st.selectbox(
+                tr("Gemini Model"),
+                options=gemini_models,
+                index=gemini_models.index(saved_gemini_model) if saved_gemini_model in gemini_models else 0,
+                key="gemini_model_selection"
+            )
+            config.google_gemini["model_name"] = gemini_model
 
     # Log settings
     st.subheader("⚙️ " + tr("Log Settings"))
@@ -690,7 +755,8 @@ with tabs[1]:
     with col2:
         # Background music settings
         st.subheader(tr("Audio Settings"))
-        
+
+        # Basic BGM setting
         bgm_options = [
             (tr("No Background Music"), ""),
             (tr("Random Background Music"), "random"),
@@ -705,26 +771,29 @@ with tabs[1]:
         # Get the selected background music type
         params.bgm_type = bgm_options[selected_index][1]
 
-        # Show or hide components based on the selection
-        if params.bgm_type == "custom":
-            custom_bgm_file = st.text_input(
-                tr("Custom Background Music File"), key="custom_bgm_file_input"
-            )
-            if custom_bgm_file and os.path.exists(custom_bgm_file):
-                params.bgm_file = custom_bgm_file
-                st.success(f"✅ {tr('Custom music selected')}: **{custom_bgm_file}**")
+        # Advanced BGM settings in expander
+        with st.expander(tr("Background Music (BGM) Settings"), expanded=False):
+            # Show or hide components based on the selection
+            if params.bgm_type == "custom":
+                custom_bgm_file = st.text_input(
+                    tr("Custom Background Music File"), key="custom_bgm_file_input"
+                )
+                if custom_bgm_file and os.path.exists(custom_bgm_file):
+                    params.bgm_file = custom_bgm_file
+                    st.success(f"✅ {tr('Custom music selected')}: **{custom_bgm_file}**")
 
-        params.bgm_volume = st.select_slider(
-            tr("Background Music Volume"),
-            options=[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
-            value=0.2
-        )
+            params.bgm_volume = st.select_slider(
+                tr("Background Music Volume"),
+                options=[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+                value=0.2
+            )
 
         # Subtitle settings
         st.subheader(tr("Subtitle Settings"))
         params.subtitle_enabled = st.checkbox(tr("Enable Subtitles"), value=True)
         
         if params.subtitle_enabled:
+            # Basic subtitle settings
             font_names = get_all_fonts()
             saved_font_name = config.ui.get("font_name", "MicrosoftYaHeiBold.ttc")
             saved_font_name_index = 0
@@ -734,49 +803,51 @@ with tabs[1]:
                 tr("Font"), font_names, index=saved_font_name_index
             )
             config.ui["font_name"] = params.font_name
-
-            subtitle_positions = [
-                (tr("Top"), "top"),
-                (tr("Center"), "center"),
-                (tr("Bottom"), "bottom"),
-                (tr("Custom"), "custom"),
-            ]
-            selected_index = st.selectbox(
-                tr("Position"),
-                index=2,
-                options=range(len(subtitle_positions)),
-                format_func=lambda x: subtitle_positions[x][0],
-            )
-            params.subtitle_position = subtitle_positions[selected_index][1]
-
-            if params.subtitle_position == "custom":
-                custom_position = st.slider(
-                    tr("Position (% from top)"), 
-                    min_value=0,
-                    max_value=100,
-                    value=70,
-                    step=5
+            
+            # Advanced subtitle settings in expander
+            with st.expander(tr("Advanced Subtitle Settings"), expanded=False):
+                subtitle_positions = [
+                    (tr("Top"), "top"),
+                    (tr("Center"), "center"),
+                    (tr("Bottom"), "bottom"),
+                    (tr("Custom"), "custom"),
+                ]
+                selected_index = st.selectbox(
+                    tr("Position"),
+                    index=2,
+                    options=range(len(subtitle_positions)),
+                    format_func=lambda x: subtitle_positions[x][0],
                 )
-                params.custom_position = float(custom_position)
+                params.subtitle_position = subtitle_positions[selected_index][1]
 
-            font_cols = st.columns(2)
-            with font_cols[0]:
-                saved_text_fore_color = config.ui.get("text_fore_color", "#FFFFFF")
-                params.text_fore_color = st.color_picker(
-                    tr("Font Color"), saved_text_fore_color
-                )
-                config.ui["text_fore_color"] = params.text_fore_color
+                if params.subtitle_position == "custom":
+                    custom_position = st.slider(
+                        tr("Position (% from top)"), 
+                        min_value=0,
+                        max_value=100,
+                        value=70,
+                        step=5
+                    )
+                    params.custom_position = float(custom_position)
 
-            with font_cols[1]:
-                saved_font_size = config.ui.get("font_size", 60)
-                params.font_size = st.slider(tr("Font Size"), 30, 100, saved_font_size)
-                config.ui["font_size"] = params.font_size
+                font_cols = st.columns(2)
+                with font_cols[0]:
+                    saved_text_fore_color = config.ui.get("text_fore_color", "#FFFFFF")
+                    params.text_fore_color = st.color_picker(
+                        tr("Font Color"), saved_text_fore_color
+                    )
+                    config.ui["text_fore_color"] = params.text_fore_color
 
-            stroke_cols = st.columns(2)
-            with stroke_cols[0]:
-                params.stroke_color = st.color_picker(tr("Stroke Color"), "#000000")
-            with stroke_cols[1]:
-                params.stroke_width = st.slider(tr("Stroke Width"), 0.0, 10.0, 1.5)
+                with font_cols[1]:
+                    saved_font_size = config.ui.get("font_size", 60)
+                    params.font_size = st.slider(tr("Font Size"), 30, 100, saved_font_size)
+                    config.ui["font_size"] = params.font_size
+
+                stroke_cols = st.columns(2)
+                with stroke_cols[0]:
+                    params.stroke_color = st.color_picker(tr("Stroke Color"), "#000000")
+                with stroke_cols[1]:
+                    params.stroke_width = st.slider(tr("Stroke Width"), 0.0, 10.0, 1.5)
 
 # Tab 3: Video Generation
 with tabs[2]:
@@ -810,81 +881,103 @@ with tabs[2]:
     # Progress information area
     log_container = st.empty()
 
-    if start_button:
-        config.save_config()
-        task_id = str(uuid4())
+if start_button:
+    config.save_config()
+    task_id = str(uuid4())
         
         # Double check requirements
-        if not params.video_subject and not params.video_script:
-            st.error(tr("Video Script and Subject Cannot Both Be Empty"))
-            scroll_to_bottom()
-            st.stop()
+    if not params.video_subject and not params.video_script:
+        st.error(tr("Video Script and Subject Cannot Both Be Empty"))
+        scroll_to_bottom()
+        st.stop()
 
-        if params.video_source not in ["pexels", "pixabay", "local"]:
-            st.error(tr("Please Select a Valid Video Source"))
-            scroll_to_bottom()
-            st.stop()
+    if params.video_source not in ["pexels", "pixabay", "local"]:
+        st.error(tr("Please Select a Valid Video Source"))
+        scroll_to_bottom()
+        st.stop()
 
-        if params.video_source == "pexels" and not config.app.get("pexels_api_keys", ""):
-            st.error(tr("Please Enter the Pexels API Key"))
-            scroll_to_bottom()
-            st.stop()
+    if params.video_source == "pexels" and not config.app.get("pexels_api_keys", ""):
+        st.error(tr("Please Enter the Pexels API Key"))
+        scroll_to_bottom()
+        st.stop()
 
-        if params.video_source == "pixabay" and not config.app.get("pixabay_api_keys", ""):
-            st.error(tr("Please Enter the Pixabay API Key"))
-            scroll_to_bottom()
-            st.stop()
+    if params.video_source == "pixabay" and not config.app.get("pixabay_api_keys", ""):
+        st.error(tr("Please Enter the Pixabay API Key"))
+        scroll_to_bottom()
+        st.stop()
+        
+    # Validate voice selection - Fix for "Invalid voice" crash
+    if not voice_name and (selected_tts_server.startswith("azure") or selected_tts_server == "siliconflow"):
+        st.warning(tr("Please select a voice before generating the video."))
+        scroll_to_bottom()
+        st.stop()
 
         # Handle uploaded files
         uploaded_files = []  # Define this if it wasn't defined in the settings tab
-        if uploaded_files:
-            local_videos_dir = utils.storage_dir("local_videos", create=True)
-            for file in uploaded_files:
-                file_path = os.path.join(local_videos_dir, f"{file.file_id}_{file.name}")
-                with open(file_path, "wb") as f:
-                    f.write(file.getbuffer())
-                    m = MaterialInfo()
-                    m.provider = "local"
-                    m.url = file_path
-                    if not params.video_materials:
-                        params.video_materials = []
-                    params.video_materials.append(m)
+    if uploaded_files:
+        local_videos_dir = utils.storage_dir("local_videos", create=True)
+        for file in uploaded_files:
+            file_path = os.path.join(local_videos_dir, f"{file.file_id}_{file.name}")
+            with open(file_path, "wb") as f:
+                f.write(file.getbuffer())
+                m = MaterialInfo()
+                m.provider = "local"
+                m.url = file_path
+                if not params.video_materials:
+                    params.video_materials = []
+                params.video_materials.append(m)
 
         # Log handling
-        log_records = []
+    log_records = []
 
-        def log_received(msg):
-            if config.ui["hide_log"]:
-                return
-            with log_container:
-                log_records.append(msg)
-                st.code("\n".join(log_records))
+    def log_received(msg):
+        if config.ui["hide_log"]:
+            return
+        with log_container:
+            log_records.append(msg)
+            st.code("\n".join(log_records))
 
-        logger.add(log_received)
+    logger.add(log_received)
 
-        # Show progress
-        with st.spinner(tr("Generating your video...")):
-            st.toast(tr("Generating Video"))
-            logger.info(tr("Start Generating Video"))
-            logger.info(utils.to_json(params))
-
-            result = tm.start(task_id=task_id, params=params)
-            
-            if not result or "videos" not in result:
-                st.error(tr("Video Generation Failed"))
-                logger.error(tr("Video Generation Failed"))
-                scroll_to_bottom()
-                st.stop()
-
-            video_files = result.get("videos", [])
-            
-        st.success(tr("Video Generation Completed"))
+    # Show progress with detailed status updates
+    with st.status(tr("Initializing video generation..."), expanded=True) as status:
+        st.toast(tr("Generating Video"))
+        logger.info(tr("Start Generating Video"))
+        logger.info(utils.to_json(params))
         
-        try:
-            if video_files:
+        # Update status for script generation
+        status.update(label=tr("Generating video script..."))
+        
+        # Update status for material search
+        status.update(label=tr("Searching for video clips..."))
+        
+        # Update status for speech generation
+        status.update(label=tr("Generating speech audio..."))
+        
+        # Process the video
+        result = tm.start(task_id=task_id, params=params)
+        
+        # Update status for rendering
+        status.update(label=tr("Rendering final video..."))
+        
+        if not result or "videos" not in result:
+            status.update(label=tr("Video generation failed!"), state="error")
+            st.error(tr("Video Generation Failed"))
+            logger.error(tr("Video Generation Failed"))
+            scroll_to_bottom()
+            st.stop()
+
+        # Complete status when successful
+        status.update(label=tr("Completed!"), state="complete")
+        video_files = result.get("videos", [])
+            
+    st.success(tr("Video Generation Completed"))
+        
+    try:
+        if video_files:
                 st.subheader(tr("Generated Videos"))
                 cols = st.columns(min(len(video_files), 3))
-                for i, url in enumerate(video_files):
+            for i, url in enumerate(video_files):
                     with cols[i % len(cols)]:
                         st.video(url)
                         # Optional: Add download button
@@ -899,8 +992,8 @@ with tabs[2]:
             st.error(f"Error displaying videos: {str(e)}")
 
         # Open task folder and show completion message
-        open_task_folder(task_id)
-        logger.info(tr("Video Generation Completed"))
+    open_task_folder(task_id)
+    logger.info(tr("Video Generation Completed"))
 
 # Save configuration on exit
 config.save_config()
