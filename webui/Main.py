@@ -190,43 +190,43 @@ with st.sidebar:
 
     # LLM Configuration
     st.subheader("🧠 " + tr("LLM Settings"))
-            llm_providers = [
-                "OpenAI",
-                "Moonshot",
-                "Azure",
-                "Qwen",
-                "DeepSeek",
-                "Gemini",
-                "Ollama",
-                "G4f",
-                "OneAPI",
-                "Cloudflare",
-                "ERNIE",
-                "Pollinations",
-            ]
-            saved_llm_provider = config.app.get("llm_provider", "OpenAI").lower()
-            saved_llm_provider_index = 0
-            for i, provider in enumerate(llm_providers):
-                if provider.lower() == saved_llm_provider:
-                    saved_llm_provider_index = i
-                    break
+    llm_providers = [
+        "OpenAI",
+        "Moonshot",
+        "Azure",
+        "Qwen",
+        "DeepSeek",
+        "Gemini",
+        "Ollama",
+        "G4f",
+        "OneAPI",
+        "Cloudflare",
+        "ERNIE",
+        "Pollinations",
+    ]
+    saved_llm_provider = config.app.get("llm_provider", "OpenAI").lower()
+    saved_llm_provider_index = 0
+    for i, provider in enumerate(llm_providers):
+        if provider.lower() == saved_llm_provider:
+            saved_llm_provider_index = i
+            break
 
-            llm_provider = st.selectbox(
-                tr("LLM Provider"),
-                options=llm_providers,
-                index=saved_llm_provider_index,
-            )
-    
-            llm_provider = llm_provider.lower()
-            config.app["llm_provider"] = llm_provider
+    llm_provider = st.selectbox(
+        tr("LLM Provider"),
+        options=llm_providers,
+        index=saved_llm_provider_index,
+    )
 
-            llm_api_key = config.app.get(f"{llm_provider}_api_key", "")
-            llm_secret_key = config.app.get(
-                f"{llm_provider}_secret_key", ""
-            )  # only for baidu ernie
-            llm_base_url = config.app.get(f"{llm_provider}_base_url", "")
-            llm_model_name = config.app.get(f"{llm_provider}_model_name", "")
-            llm_account_id = config.app.get(f"{llm_provider}_account_id", "")
+    llm_provider = llm_provider.lower()
+    config.app["llm_provider"] = llm_provider
+
+    llm_api_key = config.app.get(f"{llm_provider}_api_key", "")
+    llm_secret_key = config.app.get(
+        f"{llm_provider}_secret_key", ""
+    )  # only for baidu ernie
+    llm_base_url = config.app.get(f"{llm_provider}_base_url", "")
+    llm_model_name = config.app.get(f"{llm_provider}_model_name", "")
+    llm_account_id = config.app.get(f"{llm_provider}_account_id", "")
 
     st_llm_api_key = st.text_input(
         tr("API Key"), value=llm_api_key, type="password"
@@ -235,64 +235,58 @@ with st.sidebar:
     st_llm_base_url = st.text_input(tr("Base Url"), value=llm_base_url)
     
     # Dynamic model selection for Gemini
-            if llm_provider == "gemini":
-                if not llm_model_name:
-                    llm_model_name = "gemini-1.0-pro"
+    if llm_provider == "gemini":
+        if not llm_model_name:
+            llm_model_name = "gemini-1.0-pro"
 
-        # If API key is provided, try to get available models
-        if st_llm_api_key:
-            try:
-                import google.generativeai as genai
-                genai.configure(api_key=st_llm_api_key)
+    # If API key is provided, try to get available models
+    if st_llm_api_key:
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=st_llm_api_key)
+            
+            # Only fetch models once or when API key changes
+            if not st.session_state["gemini_models"] or st.session_state.get("last_gemini_api_key") != st_llm_api_key:
+                with st.spinner(tr("Fetching available models...")):
+                    models = genai.list_models()
+                    # Filter for text generation models
+                    text_models = [
+                        model.name for model in models 
+                        if hasattr(model, 'supported_generation_methods') 
+                        and 'generateContent' in model.supported_generation_methods
+                    ]
+                    st.session_state["gemini_models"] = text_models
+                    st.session_state["last_gemini_api_key"] = st_llm_api_key
+            
+            if st.session_state["gemini_models"]:
+                # Extract just model names for the display
+                model_names = [m.split('/')[-1] for m in st.session_state["gemini_models"]]
+                # Use selectbox instead of text_input
+                model_index = 0
+                if llm_model_name in model_names:
+                    model_index = model_names.index(llm_model_name)
                 
-                # Only fetch models once or when API key changes
-                if not st.session_state["gemini_models"] or st.session_state.get("last_gemini_api_key") != st_llm_api_key:
-                    with st.spinner(tr("Fetching available models...")):
-                        models = genai.list_models()
-                        # Filter for text generation models
-                        text_models = [
-                            model.name for model in models 
-                            if hasattr(model, 'supported_generation_methods') 
-                            and 'generateContent' in model.supported_generation_methods
-                        ]
-                        st.session_state["gemini_models"] = text_models
-                        st.session_state["last_gemini_api_key"] = st_llm_api_key
-                
-                if st.session_state["gemini_models"]:
-                    # Extract just model names for the display
-                    model_names = [m.split('/')[-1] for m in st.session_state["gemini_models"]]
-                    # Use selectbox instead of text_input
-                    model_index = 0
-                    if llm_model_name in model_names:
-                        model_index = model_names.index(llm_model_name)
-                    
-                    selected_model = st.selectbox(
-                        tr("Model Name"), 
-                        options=model_names,
-                        index=model_index
-                    )
-                    st_llm_model_name = selected_model
-                else:
-                    st_llm_model_name = st.text_input(
-                        tr("Model Name"),
-                        value=llm_model_name,
-                        key=f"{llm_provider}_model_name_input"
-                    )
-            except Exception as e:
-                st.warning(f"Could not fetch models: {str(e)}")
+                selected_model = st.selectbox(
+                    tr("Model Name"), 
+                    options=model_names,
+                    index=model_index
+                )
+                st_llm_model_name = selected_model
+            else:
                 st_llm_model_name = st.text_input(
                     tr("Model Name"),
                     value=llm_model_name,
                     key=f"{llm_provider}_model_name_input"
                 )
-            else:
+        except Exception as e:
+            st.warning(f"Could not fetch models: {str(e)}")
             st_llm_model_name = st.text_input(
                 tr("Model Name"),
                 value=llm_model_name,
                 key=f"{llm_provider}_model_name_input"
             )
     elif llm_provider == "ernie":
-                st_llm_model_name = None
+        st_llm_model_name = None
         st_llm_secret_key = st.text_input(
             tr("Secret Key"), value=llm_secret_key, type="password"
         )
@@ -305,141 +299,141 @@ with st.sidebar:
         )
     
     # Save config values
-            if st_llm_api_key:
-                config.app[f"{llm_provider}_api_key"] = st_llm_api_key
-            if st_llm_base_url:
-                config.app[f"{llm_provider}_base_url"] = st_llm_base_url
-            if st_llm_model_name:
-                config.app[f"{llm_provider}_model_name"] = st_llm_model_name
+    if st_llm_api_key:
+        config.app[f"{llm_provider}_api_key"] = st_llm_api_key
+    if st_llm_base_url:
+        config.app[f"{llm_provider}_base_url"] = st_llm_base_url
+    if st_llm_model_name:
+        config.app[f"{llm_provider}_model_name"] = st_llm_model_name
 
-            if llm_provider == "cloudflare":
-                st_llm_account_id = st.text_input(
-                    tr("Account ID"), value=llm_account_id
-                )
-                if st_llm_account_id:
-                    config.app[f"{llm_provider}_account_id"] = st_llm_account_id
+    if llm_provider == "cloudflare":
+        st_llm_account_id = st.text_input(
+            tr("Account ID"), value=llm_account_id
+        )
+        if st_llm_account_id:
+            config.app[f"{llm_provider}_account_id"] = st_llm_account_id
 
     # API Keys for video sources
     st.subheader("🎬 " + tr("Video Source Settings"))
 
-            def get_keys_from_config(cfg_key):
-                api_keys = config.app.get(cfg_key, [])
-                if isinstance(api_keys, str):
-                    api_keys = [api_keys]
-                api_key = ", ".join(api_keys)
-                return api_key
+    def get_keys_from_config(cfg_key):
+        api_keys = config.app.get(cfg_key, [])
+        if isinstance(api_keys, str):
+            api_keys = [api_keys]
+        api_key = ", ".join(api_keys)
+        return api_key
 
-            def save_keys_to_config(cfg_key, value):
-                value = value.replace(" ", "")
-                if value:
-                    config.app[cfg_key] = value.split(",")
+    def save_keys_to_config(cfg_key, value):
+        value = value.replace(" ", "")
+        if value:
+            config.app[cfg_key] = value.split(",")
 
-            pexels_api_key = get_keys_from_config("pexels_api_keys")
-            pexels_api_key = st.text_input(
-                tr("Pexels API Key"), value=pexels_api_key, type="password"
-            )
-            save_keys_to_config("pexels_api_keys", pexels_api_key)
+    pexels_api_key = get_keys_from_config("pexels_api_keys")
+    pexels_api_key = st.text_input(
+        tr("Pexels API Key"), value=pexels_api_key, type="password"
+    )
+    save_keys_to_config("pexels_api_keys", pexels_api_key)
 
-            pixabay_api_key = get_keys_from_config("pixabay_api_keys")
-            pixabay_api_key = st.text_input(
-                tr("Pixabay API Key"), value=pixabay_api_key, type="password"
-            )
-            save_keys_to_config("pixabay_api_keys", pixabay_api_key)
+    pixabay_api_key = get_keys_from_config("pixabay_api_keys")
+    pixabay_api_key = st.text_input(
+        tr("Pixabay API Key"), value=pixabay_api_key, type="password"
+    )
+    save_keys_to_config("pixabay_api_keys", pixabay_api_key)
 
     # Voice Settings
     st.subheader("🔊 " + tr("Voice Settings"))
     
     # TTS server selection
-        tts_servers = [
-            ("azure-tts-v1", "Azure TTS V1"),
-            ("azure-tts-v2", "Azure TTS V2"),
-            ("siliconflow", "SiliconFlow TTS"),
-            ("google-gemini", "Google Gemini TTS"),
-        ]
+    tts_servers = [
+        ("azure-tts-v1", "Azure TTS V1"),
+        ("azure-tts-v2", "Azure TTS V2"),
+        ("siliconflow", "SiliconFlow TTS"),
+        ("google-gemini", "Google Gemini TTS"),
+    ]
 
     # Get saved TTS server, default is v1
-        saved_tts_server = config.ui.get("tts_server", "azure-tts-v1")
-        saved_tts_server_index = 0
-        for i, (server_value, _) in enumerate(tts_servers):
-            if server_value == saved_tts_server:
-                saved_tts_server_index = i
-                break
+    saved_tts_server = config.ui.get("tts_server", "azure-tts-v1")
+    saved_tts_server_index = 0
+    for i, (server_value, _) in enumerate(tts_servers):
+        if server_value == saved_tts_server:
+            saved_tts_server_index = i
+            break
 
-        selected_tts_server_index = st.selectbox(
-            tr("TTS Servers"),
-            options=range(len(tts_servers)),
-            format_func=lambda x: tts_servers[x][1],
-            index=saved_tts_server_index,
-        )
+    selected_tts_server_index = st.selectbox(
+        tr("TTS Servers"),
+        options=range(len(tts_servers)),
+        format_func=lambda x: tts_servers[x][1],
+        index=saved_tts_server_index,
+    )
 
-        selected_tts_server = tts_servers[selected_tts_server_index][0]
-        config.ui["tts_server"] = selected_tts_server
+    selected_tts_server = tts_servers[selected_tts_server_index][0]
+    config.ui["tts_server"] = selected_tts_server
 
     # Get voice list based on selected TTS server
-        filtered_voices = []
+    filtered_voices = []
 
-        if selected_tts_server == "siliconflow":
-            # Get Silicon Flow voice list
-            filtered_voices = voice.get_siliconflow_voices()
-        elif selected_tts_server == "google-gemini":
-            # Get Google Gemini voice list
-            filtered_voices = voice.get_google_gemini_voices()
-        else:
-            # Get Azure voice list
-            all_voices = voice.get_all_azure_voices(filter_locals=None)
+    if selected_tts_server == "siliconflow":
+        # Get Silicon Flow voice list
+        filtered_voices = voice.get_siliconflow_voices()
+    elif selected_tts_server == "google-gemini":
+        # Get Google Gemini voice list
+        filtered_voices = voice.get_google_gemini_voices()
+    else:
+        # Get Azure voice list
+        all_voices = voice.get_all_azure_voices(filter_locals=None)
 
-            # Filter voices based on selected TTS server
-            for v in all_voices:
-                if selected_tts_server == "azure-tts-v2":
-                    # V2 version voice name contains "v2"
-                    if "V2" in v:
-                        filtered_voices.append(v)
-                else:
-                    # V1 version voice name does not contain "v2"
-                    if "V2" not in v:
-                        filtered_voices.append(v)
+        # Filter voices based on selected TTS server
+        for v in all_voices:
+            if selected_tts_server == "azure-tts-v2":
+                # V2 version voice name contains "v2"
+                if "V2" in v:
+                    filtered_voices.append(v)
+            else:
+                # V1 version voice name does not contain "v2"
+                if "V2" not in v:
+                    filtered_voices.append(v)
 
-        friendly_names = {
-            v: v.replace("Female", tr("Female"))
-            .replace("Male", tr("Male"))
-            .replace("Neural", "")
-            for v in filtered_voices
-        }
+    friendly_names = {
+        v: v.replace("Female", tr("Female"))
+        .replace("Male", tr("Male"))
+        .replace("Neural", "")
+        for v in filtered_voices
+    }
 
-        saved_voice_name = config.ui.get("voice_name", "")
-        saved_voice_name_index = 0
+    saved_voice_name = config.ui.get("voice_name", "")
+    saved_voice_name_index = 0
 
     # Check if saved voice is in current filtered voice list
-        if saved_voice_name in friendly_names:
-            saved_voice_name_index = list(friendly_names.keys()).index(saved_voice_name)
-        else:
+    if saved_voice_name in friendly_names:
+        saved_voice_name_index = list(friendly_names.keys()).index(saved_voice_name)
+    else:
         # If not, select a default voice based on current UI language
-            for i, v in enumerate(filtered_voices):
-                if v.lower().startswith(st.session_state["ui_language"].lower()):
-                    saved_voice_name_index = i
-                    break
+        for i, v in enumerate(filtered_voices):
+            if v.lower().startswith(st.session_state["ui_language"].lower()):
+                saved_voice_name_index = i
+                break
 
     # If no matching voice found, use the first voice
-        if saved_voice_name_index >= len(friendly_names) and friendly_names:
-            saved_voice_name_index = 0
+    if saved_voice_name_index >= len(friendly_names) and friendly_names:
+        saved_voice_name_index = 0
 
     # Ensure there are voices available
-        if friendly_names:
-            col1, col2 = st.columns([3, 1])
+    if friendly_names:
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            selected_friendly_name = st.selectbox(
+            tr("Voice"),
+            options=list(friendly_names.keys()),
+            format_func=lambda x: friendly_names[x],
+            index=min(saved_voice_name_index, len(friendly_names) - 1),
+            )
+            voice_name = selected_friendly_name
+            config.ui["voice_name"] = voice_name
             
-            with col1:
-                selected_friendly_name = st.selectbox(
-                tr("Voice"),
-                options=list(friendly_names.keys()),
-                format_func=lambda x: friendly_names[x],
-                index=min(saved_voice_name_index, len(friendly_names) - 1),
-                )
-                voice_name = selected_friendly_name
-                config.ui["voice_name"] = voice_name
-                
-            with col2:
-                preview_button = st.button("🔊 " + tr("Preview"), use_container_width=True)
-                
+        with col2:
+            preview_button = st.button("🔊 " + tr("Preview"), use_container_width=True)
+            
             # Handle voice preview functionality
             if preview_button and voice_name:
                 with st.spinner(f"Generating preview for {friendly_names.get(voice_name, voice_name)}..."):
@@ -467,16 +461,16 @@ with st.sidebar:
                             st.error(tr("Failed to generate voice preview."))
                     except Exception as e:
                         st.error(f"Error generating voice preview: {str(e)}")
-        else:
-            # If no voices available, show prompt message
-            st.warning(
-                tr(
-                "No voices available for the selected TTS server. "
-                "Please select a different TTS server."
-                )
+    else:
+        # If no voices available, show prompt message
+        st.warning(
+            tr(
+            "No voices available for the selected TTS server. "
+            "Please select a different TTS server."
             )
-            voice_name = ""
-            config.ui["voice_name"] = ""
+        )
+        voice_name = ""
+        config.ui["voice_name"] = ""
 
     # Speech rate and volume
     voice_rate = st.select_slider(
@@ -492,62 +486,62 @@ with st.sidebar:
     )
     
     # TTS API settings based on selected service
-        if selected_tts_server == "azure-tts-v2" or (
-            voice_name and voice.is_azure_v2_voice(voice_name)
-        ):
-            saved_azure_speech_region = config.azure.get("speech_region", "")
-            saved_azure_speech_key = config.azure.get("speech_key", "")
+    if selected_tts_server == "azure-tts-v2" or (
+        voice_name and voice.is_azure_v2_voice(voice_name)
+    ):
+        saved_azure_speech_region = config.azure.get("speech_region", "")
+        saved_azure_speech_key = config.azure.get("speech_key", "")
 
-            azure_speech_region = st.text_input(
-            tr("Azure Speech Region"), value=saved_azure_speech_region
-            )
-            azure_speech_key = st.text_input(
-            tr("Azure Speech API Key"), 
-                value=saved_azure_speech_key,
-            type="password"
-            )
+        azure_speech_region = st.text_input(
+        tr("Azure Speech Region"), value=saved_azure_speech_region
+        )
+        azure_speech_key = st.text_input(
+        tr("Azure Speech API Key"), 
+            value=saved_azure_speech_key,
+        type="password"
+        )
 
-            config.azure["speech_region"] = azure_speech_region
-            config.azure["speech_key"] = azure_speech_key
+        config.azure["speech_region"] = azure_speech_region
+        config.azure["speech_key"] = azure_speech_key
 
-        if selected_tts_server == "siliconflow" or (
-            voice_name and voice.is_siliconflow_voice(voice_name)
-        ):
-            saved_siliconflow_api_key = config.siliconflow.get("api_key", "")
-            siliconflow_api_key = st.text_input(
-                tr("SiliconFlow API Key"),
-                value=saved_siliconflow_api_key,
-                type="password",
-                key="siliconflow_api_key_input",
-            )
-            config.siliconflow["api_key"] = siliconflow_api_key
+    if selected_tts_server == "siliconflow" or (
+        voice_name and voice.is_siliconflow_voice(voice_name)
+    ):
+        saved_siliconflow_api_key = config.siliconflow.get("api_key", "")
+        siliconflow_api_key = st.text_input(
+            tr("SiliconFlow API Key"),
+            value=saved_siliconflow_api_key,
+            type="password",
+            key="siliconflow_api_key_input",
+        )
+        config.siliconflow["api_key"] = siliconflow_api_key
+        
+    if selected_tts_server == "google-gemini" or (
+        voice_name and voice.is_google_gemini_voice(voice_name)
+    ):
+        # Check if google_gemini config exists, initialize if not
+        if not hasattr(config, "google_gemini"):
+            config.google_gemini = {}
             
-        if selected_tts_server == "google-gemini" or (
-            voice_name and voice.is_google_gemini_voice(voice_name)
-        ):
-            # Check if google_gemini config exists, initialize if not
-            if not hasattr(config, "google_gemini"):
-                config.google_gemini = {}
-                
-            saved_gemini_api_key = config.google_gemini.get("api_key", "")
-            gemini_api_key = st.text_input(
-                tr("Google Gemini API Key"),
-                value=saved_gemini_api_key,
-                type="password",
-                key="gemini_api_key_input",
-            )
-            config.google_gemini["api_key"] = gemini_api_key
-            
-            # Model selection
-            gemini_models = ["gemini-2.5-flash", "gemini-2.5-pro"]
-            saved_gemini_model = config.google_gemini.get("model_name", "gemini-2.5-flash")
-            gemini_model = st.selectbox(
-                tr("Gemini Model"),
-                options=gemini_models,
-                index=gemini_models.index(saved_gemini_model) if saved_gemini_model in gemini_models else 0,
-                key="gemini_model_selection"
-            )
-            config.google_gemini["model_name"] = gemini_model
+        saved_gemini_api_key = config.google_gemini.get("api_key", "")
+        gemini_api_key = st.text_input(
+            tr("Google Gemini API Key"),
+            value=saved_gemini_api_key,
+            type="password",
+            key="gemini_api_key_input",
+        )
+        config.google_gemini["api_key"] = gemini_api_key
+        
+        # Model selection
+        gemini_models = ["gemini-2.5-flash", "gemini-2.5-pro"]
+        saved_gemini_model = config.google_gemini.get("model_name", "gemini-2.5-flash")
+        gemini_model = st.selectbox(
+            tr("Gemini Model"),
+            options=gemini_models,
+            index=gemini_models.index(saved_gemini_model) if saved_gemini_model in gemini_models else 0,
+            key="gemini_model_selection"
+        )
+        config.google_gemini["model_name"] = gemini_model
 
     # Log settings
     st.subheader("⚙️ " + tr("Log Settings"))
@@ -885,7 +879,7 @@ if start_button:
     config.save_config()
     task_id = str(uuid4())
         
-        # Double check requirements
+    # Double check requirements
     if not params.video_subject and not params.video_script:
         st.error(tr("Video Script and Subject Cannot Both Be Empty"))
         scroll_to_bottom()
@@ -912,8 +906,8 @@ if start_button:
         scroll_to_bottom()
         st.stop()
 
-        # Handle uploaded files
-        uploaded_files = []  # Define this if it wasn't defined in the settings tab
+    # Handle uploaded files
+    uploaded_files = []  # Define this if it wasn't defined in the settings tab
     if uploaded_files:
         local_videos_dir = utils.storage_dir("local_videos", create=True)
         for file in uploaded_files:
@@ -927,7 +921,7 @@ if start_button:
                     params.video_materials = []
                 params.video_materials.append(m)
 
-        # Log handling
+    # Log handling
     log_records = []
 
     def log_received(msg):
@@ -975,23 +969,23 @@ if start_button:
         
     try:
         if video_files:
-                st.subheader(tr("Generated Videos"))
-                cols = st.columns(min(len(video_files), 3))
+            st.subheader(tr("Generated Videos"))
+            cols = st.columns(min(len(video_files), 3))
             for i, url in enumerate(video_files):
-                    with cols[i % len(cols)]:
-                        st.video(url)
-                        # Optional: Add download button
-                        with open(url, "rb") as file:
-                            st.download_button(
-                                label=tr("Download Video"),
-                                data=file,
-                                file_name=f"unqtube2_video_{i+1}.mp4",
-                                mime="video/mp4",
-                            )
-        except Exception as e:
-            st.error(f"Error displaying videos: {str(e)}")
+                with cols[i % len(cols)]:
+                    st.video(url)
+                    # Optional: Add download button
+                    with open(url, "rb") as file:
+                        st.download_button(
+                            label=tr("Download Video"),
+                            data=file,
+                            file_name=f"unqtube2_video_{i+1}.mp4",
+                            mime="video/mp4",
+                        )
+    except Exception as e:
+        st.error(f"Error displaying videos: {str(e)}")
 
-        # Open task folder and show completion message
+    # Open task folder and show completion message
     open_task_folder(task_id)
     logger.info(tr("Video Generation Completed"))
 
