@@ -1,6 +1,6 @@
-# MoneyPrinterTurbo Test Directory
+# UnQTube2 Test Directory
 
-This directory contains unit tests for the **MoneyPrinterTurbo** project.
+This directory contains unit tests for the **UnQTube2** project.
 
 ## Directory Structure
 
@@ -11,7 +11,7 @@ This directory contains unit tests for the **MoneyPrinterTurbo** project.
 
 ## Running Tests
 
-You can run the tests using Python’s built-in `unittest` framework:
+You can run the tests using Python's built-in `unittest` framework:
 
 ```bash
 # Run all tests
@@ -25,7 +25,7 @@ python -m unittest test.services.test_video.TestVideoService
 
 # Run a specific test method
 python -m unittest test.services.test_video.TestVideoService.test_preprocess_video
-````
+```
 
 ## Adding New Tests
 

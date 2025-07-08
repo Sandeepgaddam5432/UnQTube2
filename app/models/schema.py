@@ -5,7 +5,7 @@ from typing import Any, List, Optional, Union
 import pydantic
 from pydantic import BaseModel
 
-# 忽略 Pydantic 的特定警告
+# Ignore specific Pydantic warnings
 warnings.filterwarnings(
     "ignore",
     category=UserWarning,
@@ -284,7 +284,7 @@ class BgmRetrieveResponse(BaseResponse):
                         {
                             "name": "output013.mp3",
                             "size": 1891269,
-                            "file": "/MoneyPrinterTurbo/resource/songs/output013.mp3",
+                            "file": "/UnQTube2/resource/songs/output013.mp3",
                         }
                     ]
                 },
@@ -298,6 +298,6 @@ class BgmUploadResponse(BaseResponse):
             "example": {
                 "status": 200,
                 "message": "success",
-                "data": {"file": "/MoneyPrinterTurbo/resource/songs/example.mp3"},
+                "data": {"file": "/UnQTube2/resource/songs/example.mp3"},
             },
         }

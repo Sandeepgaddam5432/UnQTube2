@@ -21,10 +21,10 @@ Despite the myriad of perspectives, one thing remains clear: the meaning of life
 It's an existential inquiry that encourages us to reflect on our values, desires, and the essence of our existence.
 """
 
-text_zh = """
-预计未来3天深圳冷空气活动频繁，未来两天持续阴天有小雨，出门带好雨具；
-10-11日持续阴天有小雨，日温差小，气温在13-17℃之间，体感阴凉；
-12日天气短暂好转，早晚清凉；
+test_text = """
+Expected cold air activity in Shenzhen for the next 3 days, with small rain continuing for the next two days, bring rain gear when going out;
+On the 10th-11th, it will be continuously cloudy with light rain, small temperature difference, temperature between 13-17°C, feeling cool;
+On the 12th, weather will improve briefly, cool in the morning and evening;
 """
 
 voice_rate=1.0
@@ -46,19 +46,19 @@ class TestVoiceService(unittest.TestCase):
             parts = voice_name.split(":")
             if len(parts) >= 3:
                 model = parts[1]
-                # 移除性别后缀，例如 "alex-Male" -> "alex"
+                # Remove gender suffix, e.g. "alex-Male" -> "alex"
                 voice_with_gender = parts[2]
                 voice = voice_with_gender.split("-")[0]
-                # 构建完整的voice参数，格式为 "model:voice"
+                # Build complete voice parameter, format is "model:voice"
                 full_voice = f"{model}:{voice}"
                 voice_file = f"{temp_dir}/tts-siliconflow-{voice}.mp3"
                 subtitle_file = f"{temp_dir}/tts-siliconflow-{voice}.srt"
                 sub_maker = vs.siliconflow_tts(
-                    text=text_zh, model=model, voice=full_voice, voice_file=voice_file, voice_rate=voice_rate, voice_volume=voice_volume
+                    text=test_text, model=model, voice=full_voice, voice_file=voice_file, voice_rate=voice_rate, voice_volume=voice_volume
                 )
                 if not sub_maker:
                     self.fail("siliconflow tts failed")
-                vs.create_subtitle(sub_maker=sub_maker, text=text_zh, subtitle_file=subtitle_file)
+                vs.create_subtitle(sub_maker=sub_maker, text=test_text, subtitle_file=subtitle_file)
                 audio_duration = vs.get_audio_duration(sub_maker)
                 print(f"voice: {voice_name}, audio duration: {audio_duration}s")
             else:
@@ -74,11 +74,11 @@ class TestVoiceService(unittest.TestCase):
         voice_file = f"{temp_dir}/tts-azure-v1-{voice_name}.mp3"
         subtitle_file = f"{temp_dir}/tts-azure-v1-{voice_name}.srt"
         sub_maker = vs.azure_tts_v1(
-            text=text_zh, voice_name=voice_name, voice_file=voice_file, voice_rate=voice_rate
+            text=test_text, voice_name=voice_name, voice_file=voice_file, voice_rate=voice_rate
         )
         if not sub_maker:
             self.fail("azure tts v1 failed")
-        vs.create_subtitle(sub_maker=sub_maker, text=text_zh, subtitle_file=subtitle_file)
+        vs.create_subtitle(sub_maker=sub_maker, text=test_text, subtitle_file=subtitle_file)
         audio_duration = vs.get_audio_duration(sub_maker)
         print(f"voice: {voice_name}, audio duration: {audio_duration}s")
 
@@ -91,11 +91,11 @@ class TestVoiceService(unittest.TestCase):
             voice_file = f"{temp_dir}/tts-azure-v2-{voice_name}.mp3"
             subtitle_file = f"{temp_dir}/tts-azure-v2-{voice_name}.srt"
             sub_maker = vs.azure_tts_v2(
-                text=text_zh, voice_name=voice_name, voice_file=voice_file
+                text=test_text, voice_name=voice_name, voice_file=voice_file
             )
             if not sub_maker:
                 self.fail("azure tts v2 failed")
-            vs.create_subtitle(sub_maker=sub_maker, text=text_zh, subtitle_file=subtitle_file)
+            vs.create_subtitle(sub_maker=sub_maker, text=test_text, subtitle_file=subtitle_file)
             audio_duration = vs.get_audio_duration(sub_maker)
             print(f"voice: {voice_name}, audio duration: {audio_duration}s")
 
