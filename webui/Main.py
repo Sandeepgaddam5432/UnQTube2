@@ -426,7 +426,7 @@ with st.sidebar:
             tr("Voice"),
             options=list(friendly_names.keys()),
             format_func=lambda x: friendly_names[x],
-            index=min(saved_voice_name_index, len(friendly_names) - 1),
+            index=min(saved_voice_name_index, len(friendly_names) - 1) if friendly_names else 0,
             )
             voice_name = selected_friendly_name
             config.ui["voice_name"] = voice_name
@@ -902,6 +902,12 @@ if start_button:
         
     # Validate voice selection - Fix for "Invalid voice" crash
     if not voice_name and (selected_tts_server.startswith("azure") or selected_tts_server == "siliconflow"):
+        st.warning(tr("Please select a voice before generating the video."))
+        scroll_to_bottom()
+        st.stop()
+        
+    # Additional check to ensure a voice is selected for any TTS provider
+    if not voice_name:
         st.warning(tr("Please select a voice before generating the video."))
         scroll_to_bottom()
         st.stop()
