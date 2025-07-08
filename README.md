@@ -100,6 +100,8 @@ Skip local environment setup, click to quickly experience UnQTube2 in Google Col
 
 [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Sandeepgaddam5432/UnQTube2/blob/main/docs/UnQTube2.ipynb)
 
+> **Note:** The Colab notebook now uses Cloudflare Tunnel to create a secure public URL for accessing your UnQTube2 instance. No authentication token is required, and it provides more stable connections compared to the previous ngrok implementation.
+
 
 ### Windows One-Click Launcher
 
