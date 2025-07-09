@@ -123,6 +123,7 @@ def combine_videos(
     video_transition_mode: VideoTransitionMode = None,
     max_clip_duration: int = 5,
     threads: int = 2,
+    progress_callback = None,
 ) -> str:
     audio_clip = AudioFileClip(audio_file)
     audio_duration = audio_clip.duration
@@ -135,11 +136,25 @@ def combine_videos(
 
     aspect = VideoAspect(video_aspect)
     video_width, video_height = aspect.to_resolution()
+    
+    # Set target resolution to 720p equivalent based on aspect ratio
+    if aspect == VideoAspect.portrait:  # 9:16
+        target_width = 720
+        target_height = 1280
+    else:  # 16:9
+        target_width = 1280
+        target_height = 720
+    
+    logger.info(f"Target resolution for processing: {target_width}x{target_height} (original: {video_width}x{video_height})")
 
     processed_clips = []
     subclipped_items = []
     video_duration = 0
-    for video_path in video_paths:
+    
+    # Step 1: Prepare subclipped items
+    logger.info(f"Preparing video clips from {len(video_paths)} source files")
+    for i, video_path in enumerate(video_paths):
+        logger.info(f"Processing source file {i+1}/{len(video_paths)}: {os.path.basename(video_path)}")
         clip = VideoFileClip(video_path)
         clip_duration = clip.duration
         clip_w, clip_h = clip.size
@@ -150,7 +165,7 @@ def combine_videos(
         while start_time < clip_duration:
             end_time = min(start_time + max_clip_duration, clip_duration)            
             if clip_duration - start_time >= max_clip_duration:
-                subclipped_items.append(SubClippedVideoClip(file_path= video_path, start_time=start_time, end_time=end_time, width=clip_w, height=clip_h))
+                subclipped_items.append(SubClippedVideoClip(file_path=video_path, start_time=start_time, end_time=end_time, width=clip_w, height=clip_h))
             start_time = end_time    
             if video_concat_mode.value == VideoConcatMode.sequential.value:
                 break
@@ -162,48 +177,61 @@ def combine_videos(
     logger.debug(f"total subclipped items: {len(subclipped_items)}")
     
     # Add downloaded clips over and over until the duration of the audio (max_duration) has been reached
+    total_clips = len(subclipped_items)
     for i, subclipped_item in enumerate(subclipped_items):
         if video_duration > audio_duration:
             break
         
-        logger.debug(f"processing clip {i+1}: {subclipped_item.width}x{subclipped_item.height}, current duration: {video_duration:.2f}s, remaining: {audio_duration - video_duration:.2f}s")
+        # Update progress if callback provided
+        if progress_callback:
+            progress_callback((i+1) / total_clips)
+        
+        logger.info(f"Processing clip {i+1}/{total_clips}: {os.path.basename(subclipped_item.file_path)}, segment {subclipped_item.start_time:.1f}s-{subclipped_item.end_time:.1f}s")
+        logger.debug(f"Clip details: {subclipped_item.width}x{subclipped_item.height}, current duration: {video_duration:.2f}s, remaining: {audio_duration - video_duration:.2f}s")
         
         try:
             clip = VideoFileClip(subclipped_item.file_path).subclipped(subclipped_item.start_time, subclipped_item.end_time)
             clip_duration = clip.duration
-            # Not all videos are same size, so we need to resize them
+            
+            # Resize to target resolution to reduce memory usage
             clip_w, clip_h = clip.size
-            if clip_w != video_width or clip_h != video_height:
-                clip_ratio = clip.w / clip.h
-                video_ratio = video_width / video_height
-                logger.debug(f"resizing clip, source: {clip_w}x{clip_h}, ratio: {clip_ratio:.2f}, target: {video_width}x{video_height}, ratio: {video_ratio:.2f}")
-                
-                if clip_ratio == video_ratio:
-                    clip = clip.resized(new_size=(video_width, video_height))
+            logger.debug(f"Resizing clip from {clip_w}x{clip_h} to target resolution {target_width}x{target_height}")
+            
+            # Not all videos are same size, so we need to resize them
+            clip_ratio = clip.w / clip.h
+            video_ratio = target_width / target_height
+            
+            if clip_ratio == video_ratio:
+                resized_clip = clip.resize(width=target_width, height=target_height)
+            else:
+                if clip_ratio > video_ratio:
+                    scale_factor = target_width / clip_w
                 else:
-                    if clip_ratio > video_ratio:
-                        scale_factor = video_width / clip_w
-                    else:
-                        scale_factor = video_height / clip_h
+                    scale_factor = target_height / clip_h
 
-                    new_width = int(clip_w * scale_factor)
-                    new_height = int(clip_h * scale_factor)
+                new_width = int(clip_w * scale_factor)
+                new_height = int(clip_h * scale_factor)
 
-                    background = ColorClip(size=(video_width, video_height), color=(0, 0, 0)).with_duration(clip_duration)
-                    clip_resized = clip.resized(new_size=(new_width, new_height)).with_position("center")
-                    clip = CompositeVideoClip([background, clip_resized])
-                    
+                background = ColorClip(size=(target_width, target_height), color=(0, 0, 0)).with_duration(clip_duration)
+                clip_resized = clip.resize(width=new_width, height=new_height).with_position("center")
+                resized_clip = CompositeVideoClip([background, clip_resized])
+                
+                # Explicitly close original clip to free memory
+                close_clip(clip)
+                clip = None
+                gc.collect()
+            
             shuffle_side = random.choice(["left", "right", "top", "bottom"])
             if video_transition_mode.value == VideoTransitionMode.none.value:
-                clip = clip
+                final_clip = resized_clip
             elif video_transition_mode.value == VideoTransitionMode.fade_in.value:
-                clip = video_effects.fadein_transition(clip, 1)
+                final_clip = video_effects.fadein_transition(resized_clip, 1)
             elif video_transition_mode.value == VideoTransitionMode.fade_out.value:
-                clip = video_effects.fadeout_transition(clip, 1)
+                final_clip = video_effects.fadeout_transition(resized_clip, 1)
             elif video_transition_mode.value == VideoTransitionMode.slide_in.value:
-                clip = video_effects.slidein_transition(clip, 1, shuffle_side)
+                final_clip = video_effects.slidein_transition(resized_clip, 1, shuffle_side)
             elif video_transition_mode.value == VideoTransitionMode.slide_out.value:
-                clip = video_effects.slideout_transition(clip, 1, shuffle_side)
+                final_clip = video_effects.slideout_transition(resized_clip, 1, shuffle_side)
             elif video_transition_mode.value == VideoTransitionMode.shuffle.value:
                 transition_funcs = [
                     lambda c: video_effects.fadein_transition(c, 1),
@@ -212,22 +240,32 @@ def combine_videos(
                     lambda c: video_effects.slideout_transition(c, 1, shuffle_side),
                 ]
                 shuffle_transition = random.choice(transition_funcs)
-                clip = shuffle_transition(clip)
-
-            if clip.duration > max_clip_duration:
-                clip = clip.subclipped(0, max_clip_duration)
+                final_clip = shuffle_transition(resized_clip)
                 
-            # wirte clip to temp file
+                # If resized_clip is not the same as final_clip, close it
+                if resized_clip is not final_clip:
+                    close_clip(resized_clip)
+                    resized_clip = None
+                    gc.collect()
+
+            if final_clip.duration > max_clip_duration:
+                final_clip = final_clip.subclipped(0, max_clip_duration)
+                
+            # Write clip to temp file
             clip_file = f"{output_dir}/temp-clip-{i+1}.mp4"
-            clip.write_videofile(clip_file, logger=None, fps=fps, codec=video_codec)
+            logger.info(f"Writing processed clip {i+1} to {os.path.basename(clip_file)}")
+            final_clip.write_videofile(clip_file, logger=None, fps=fps, codec=video_codec)
             
-            close_clip(clip)
+            # Close clips and force garbage collection
+            close_clip(final_clip)
+            final_clip = None
+            gc.collect()
         
-            processed_clips.append(SubClippedVideoClip(file_path=clip_file, duration=clip.duration, width=clip_w, height=clip_h))
-            video_duration += clip.duration
+            processed_clips.append(SubClippedVideoClip(file_path=clip_file, duration=clip_duration, width=clip_w, height=clip_h))
+            video_duration += clip_duration
             
         except Exception as e:
-            logger.error(f"failed to process clip: {str(e)}")
+            logger.error(f"Failed to process clip {i+1}: {str(e)}")
     
     # loop processed clips until the video duration matches or exceeds the audio duration.
     if video_duration < audio_duration:
@@ -241,17 +279,17 @@ def combine_videos(
         logger.info(f"video duration: {video_duration:.2f}s, audio duration: {audio_duration:.2f}s, looped {len(processed_clips)-len(base_clips)} clips")
      
     # merge video clips progressively, avoid loading all videos at once to avoid memory overflow
-    logger.info("starting clip merging process")
+    logger.info("Starting clip merging process")
     if not processed_clips:
-        logger.warning("no clips available for merging")
+        logger.warning("No clips available for merging")
         return combined_video_path
     
     # if there is only one clip, use it directly
     if len(processed_clips) == 1:
-        logger.info("using single clip directly")
+        logger.info("Using single clip directly")
         shutil.copy(processed_clips[0].file_path, combined_video_path)
         delete_files(processed_clips)
-        logger.info("video combining completed")
+        logger.info("Video combining completed")
         return combined_video_path
     
     # create initial video file as base
@@ -263,8 +301,13 @@ def combine_videos(
     shutil.copy(base_clip_path, temp_merged_video)
     
     # merge remaining video clips one by one
+    total_merges = len(processed_clips) - 1
     for i, clip in enumerate(processed_clips[1:], 1):
-        logger.info(f"merging clip {i}/{len(processed_clips)-1}, duration: {clip.duration:.2f}s")
+        logger.info(f"Merging clip {i}/{total_merges}, duration: {clip.duration:.2f}s")
+        
+        # Update progress if callback provided (offset progress to account for previous steps)
+        if progress_callback:
+            progress_callback(0.5 + (i / total_merges) * 0.5)
         
         try:
             # load current base video and next clip to merge
@@ -283,16 +326,20 @@ def combine_videos(
                 audio_codec=audio_codec,
                 fps=fps,
             )
+            
+            # Close clips and force garbage collection
             close_clip(base_clip)
             close_clip(next_clip)
             close_clip(merged_clip)
+            base_clip = next_clip = merged_clip = None
+            gc.collect()
             
             # replace base file with new merged file
             delete_files(temp_merged_video)
             os.rename(temp_merged_next, temp_merged_video)
             
         except Exception as e:
-            logger.error(f"failed to merge clip: {str(e)}")
+            logger.error(f"Failed to merge clip {i}: {str(e)}")
             continue
     
     # after merging, rename final result to target file name
@@ -302,7 +349,7 @@ def combine_videos(
     clip_files = [clip.file_path for clip in processed_clips]
     delete_files(clip_files)
             
-    logger.info("video combining completed")
+    logger.info("Video combining completed")
     return combined_video_path
 
 

@@ -173,6 +173,13 @@ def generate_final_videos(
             utils.task_dir(task_id), f"combined-{index}.mp4"
         )
         logger.info(f"\n\n## combining video: {index} => {combined_video_path}")
+        
+        # Define progress callback function for video combining
+        def progress_callback(progress_value):
+            # Calculate overall progress (50% to 75% of total task)
+            overall_progress = _progress + (progress_value * 25 / params.video_count)
+            sm.state.update_task(task_id, progress=overall_progress)
+        
         video.combine_videos(
             combined_video_path=combined_video_path,
             video_paths=downloaded_videos,
@@ -182,6 +189,7 @@ def generate_final_videos(
             video_transition_mode=video_transition_mode,
             max_clip_duration=params.video_clip_duration,
             threads=params.n_threads,
+            progress_callback=progress_callback,
         )
 
         _progress += 50 / params.video_count / 2

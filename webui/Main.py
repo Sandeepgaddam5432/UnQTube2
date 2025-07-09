@@ -960,20 +960,27 @@ if start_button:
         logger.info(tr("Start Generating Video"))
         logger.info(utils.to_json(params))
         
+        # Create a progress bar for the video generation process
+        progress_bar = st.progress(0)
+        
         # Update status for script generation
         status.update(label=tr("Generating video script..."))
+        progress_bar.progress(0.1)
         
         # Update status for material search
         status.update(label=tr("Searching for video clips..."))
+        progress_bar.progress(0.3)
         
         # Update status for speech generation
         status.update(label=tr("Generating speech audio..."))
+        progress_bar.progress(0.4)
         
         # Process the video
         result = tm.start(task_id=task_id, params=params)
         
         # Update status for rendering
         status.update(label=tr("Rendering final video..."))
+        progress_bar.progress(0.9)
         
         if not result or "videos" not in result:
             status.update(label=tr("Video generation failed!"), state="error")
@@ -983,6 +990,7 @@ if start_button:
             st.stop()
 
         # Complete status when successful
+        progress_bar.progress(1.0)
         status.update(label=tr("Completed!"), state="complete")
         video_files = result.get("videos", [])
             
