@@ -4,7 +4,10 @@ import os
 import random
 import gc
 import shutil
-from typing import List
+import subprocess
+import concurrent.futures
+from typing import List, Dict, Tuple
+from pathlib import Path
 from loguru import logger
 from moviepy import (
     AudioFileClip,
@@ -130,239 +133,145 @@ def combine_videos(
 ) -> str:
     audio_clip = AudioFileClip(audio_file)
     audio_duration = audio_clip.duration
-    logger.info(f"audio duration: {audio_duration} seconds")
-    # Required duration of each clip
-    req_dur = audio_duration / len(video_paths)
-    req_dur = max_clip_duration
-    logger.info(f"maximum clip duration: {req_dur} seconds")
+    audio_clip.close()
+    logger.info(f"Audio duration: {audio_duration} seconds")
+    logger.info(f"Maximum clip duration: {max_clip_duration} seconds")
     output_dir = os.path.dirname(combined_video_path)
-
-    aspect = VideoAspect(video_aspect)
-    video_width, video_height = aspect.to_resolution()
     
-    # Apply resolution multiplier based on user selection
-    resolution_multiplier = VideoResolution(video_resolution).to_multiplier()
-    target_width = int(video_width * resolution_multiplier)
-    target_height = int(video_height * resolution_multiplier)
+    # Determine optimal number of workers based on CPU count
+    max_workers = min(os.cpu_count() or 4, 8)  # Limit to 8 workers max
     
-    # Set target resolution based on selected quality
-    if aspect == VideoAspect.portrait:  # 9:16
-        base_width, base_height = 720, 1280
-    else:  # 16:9
-        base_width, base_height = 1280, 720
+    # Step 1: Preprocess all video clips in parallel using FFmpeg
+    logger.info("Starting parallel clip preprocessing with FFmpeg")
+    if progress_callback:
+        progress_callback(0.1)  # 10% progress for starting preprocessing
     
-    # Apply the multiplier to get the actual resolution
-    target_width = int(base_width * resolution_multiplier)
-    target_height = int(base_height * resolution_multiplier)
+    preprocessed_clips = preprocess_clips_in_parallel(
+        video_paths=video_paths,
+        video_aspect=video_aspect,
+        video_resolution=video_resolution,
+        video_transition_mode=video_transition_mode,
+        max_clip_duration=max_clip_duration,
+        output_dir=output_dir,
+        max_workers=max_workers
+    )
     
-    logger.info(f"Target resolution for processing: {target_width}x{target_height} (original: {video_width}x{video_height}, multiplier: {resolution_multiplier})")
-
-    processed_clips = []
-    subclipped_items = []
-    video_duration = 0
+    if not preprocessed_clips:
+        logger.error("No clips were successfully preprocessed!")
+        return combined_video_path
     
-    # Step 1: Prepare subclipped items
-    logger.info(f"Preparing video clips from {len(video_paths)} source files")
-    for i, video_path in enumerate(video_paths):
-        logger.info(f"Processing source file {i+1}/{len(video_paths)}: {os.path.basename(video_path)}")
-        clip = VideoFileClip(video_path)
-        clip_duration = clip.duration
-        clip_w, clip_h = clip.size
-        close_clip(clip)
-        
-        start_time = 0
-
-        while start_time < clip_duration:
-            end_time = min(start_time + max_clip_duration, clip_duration)            
-            if clip_duration - start_time >= max_clip_duration:
-                subclipped_items.append(SubClippedVideoClip(file_path=video_path, start_time=start_time, end_time=end_time, width=clip_w, height=clip_h))
-            start_time = end_time    
-            if video_concat_mode.value == VideoConcatMode.sequential.value:
-                break
-
-    # random subclipped_items order
+    logger.info(f"Successfully preprocessed {len(preprocessed_clips)} clips")
+    if progress_callback:
+        progress_callback(0.5)  # 50% progress after preprocessing
+    
+    # If using random concat mode, shuffle the clips
     if video_concat_mode.value == VideoConcatMode.random.value:
-        random.shuffle(subclipped_items)
-        
-    logger.debug(f"total subclipped items: {len(subclipped_items)}")
+        random.shuffle(preprocessed_clips)
     
-    # Add downloaded clips over and over until the duration of the audio (max_duration) has been reached
-    total_clips = len(subclipped_items)
-    for i, subclipped_item in enumerate(subclipped_items):
-        if video_duration > audio_duration:
+    # Filter clips to match audio duration
+    total_duration = 0
+    final_clips = []
+    
+    for clip_info in preprocessed_clips:
+        if total_duration >= audio_duration:
             break
-        
-        # Update progress if callback provided
-        if progress_callback:
-            progress_callback((i+1) / total_clips)
-        
-        logger.info(f"Processing clip {i+1}/{total_clips}: {os.path.basename(subclipped_item.file_path)}, segment {subclipped_item.start_time:.1f}s-{subclipped_item.end_time:.1f}s")
-        logger.debug(f"Clip details: {subclipped_item.width}x{subclipped_item.height}, current duration: {video_duration:.2f}s, remaining: {audio_duration - video_duration:.2f}s")
-        
-        try:
-            clip = VideoFileClip(subclipped_item.file_path).subclipped(subclipped_item.start_time, subclipped_item.end_time)
-            clip_duration = clip.duration
-            
-            # Resize to target resolution to reduce memory usage
-            clip_w, clip_h = clip.size
-            logger.debug(f"Resizing clip from {clip_w}x{clip_h} to target resolution {target_width}x{target_height}")
-            
-            # Not all videos are same size, so we need to resize them
-            clip_ratio = clip.w / clip.h
-            video_ratio = target_width / target_height
-            
-            if clip_ratio == video_ratio:
-                resized_clip = clip.fx(vfx.resize, width=target_width, height=target_height)
-            else:
-                if clip_ratio > video_ratio:
-                    scale_factor = target_width / clip_w
-                else:
-                    scale_factor = target_height / clip_h
-
-                new_width = int(clip_w * scale_factor)
-                new_height = int(clip_h * scale_factor)
-
-                background = ColorClip(size=(target_width, target_height), color=(0, 0, 0)).with_duration(clip_duration)
-                clip_resized = clip.fx(vfx.resize, width=new_width, height=new_height).with_position("center")
-                resized_clip = CompositeVideoClip([background, clip_resized])
-                
-                # Explicitly close original clip to free memory
-                close_clip(clip)
-                clip = None
-                gc.collect()
-            
-            shuffle_side = random.choice(["left", "right", "top", "bottom"])
-            if video_transition_mode.value == VideoTransitionMode.none.value:
-                final_clip = resized_clip
-            elif video_transition_mode.value == VideoTransitionMode.fade_in.value:
-                final_clip = video_effects.fadein_transition(resized_clip, 1)
-            elif video_transition_mode.value == VideoTransitionMode.fade_out.value:
-                final_clip = video_effects.fadeout_transition(resized_clip, 1)
-            elif video_transition_mode.value == VideoTransitionMode.slide_in.value:
-                final_clip = video_effects.slidein_transition(resized_clip, 1, shuffle_side)
-            elif video_transition_mode.value == VideoTransitionMode.slide_out.value:
-                final_clip = video_effects.slideout_transition(resized_clip, 1, shuffle_side)
-            elif video_transition_mode.value == VideoTransitionMode.shuffle.value:
-                transition_funcs = [
-                    lambda c: video_effects.fadein_transition(c, 1),
-                    lambda c: video_effects.fadeout_transition(c, 1),
-                    lambda c: video_effects.slidein_transition(c, 1, shuffle_side),
-                    lambda c: video_effects.slideout_transition(c, 1, shuffle_side),
-                ]
-                shuffle_transition = random.choice(transition_funcs)
-                final_clip = shuffle_transition(resized_clip)
-                
-                # If resized_clip is not the same as final_clip, close it
-                if resized_clip is not final_clip:
-                    close_clip(resized_clip)
-                    resized_clip = None
-                    gc.collect()
-
-            if final_clip.duration > max_clip_duration:
-                final_clip = final_clip.subclipped(0, max_clip_duration)
-                
-            # Write clip to temp file
-            clip_file = f"{output_dir}/temp-clip-{i+1}.mp4"
-            logger.info(f"Writing processed clip {i+1} to {os.path.basename(clip_file)}")
-            gpu_params = utils.get_gpu_acceleration_params()
-            final_clip.write_videofile(clip_file, logger=None, fps=fps, codec=video_codec, **gpu_params)
-            
-            # Close clips and force garbage collection
-            close_clip(final_clip)
-            final_clip = None
-            gc.collect()
-        
-            processed_clips.append(SubClippedVideoClip(file_path=clip_file, duration=clip_duration, width=clip_w, height=clip_h))
-            video_duration += clip_duration
-            
-        except Exception as e:
-            logger.error(f"Failed to process clip {i+1}: {str(e)}")
+        final_clips.append(clip_info)
+        total_duration += clip_info.duration
     
-    # loop processed clips until the video duration matches or exceeds the audio duration.
-    if video_duration < audio_duration:
-        logger.warning(f"video duration ({video_duration:.2f}s) is shorter than audio duration ({audio_duration:.2f}s), looping clips to match audio length.")
-        base_clips = processed_clips.copy()
-        for clip in itertools.cycle(base_clips):
-            if video_duration >= audio_duration:
+    if total_duration < audio_duration:
+        logger.warning(f"Video duration ({total_duration:.2f}s) is shorter than audio duration ({audio_duration:.2f}s). Adding more clips.")
+        # Loop clips to fill the duration
+        additional_clips = []
+        for clip_info in itertools.cycle(preprocessed_clips):
+            if total_duration >= audio_duration:
                 break
-            processed_clips.append(clip)
-            video_duration += clip.duration
-        logger.info(f"video duration: {video_duration:.2f}s, audio duration: {audio_duration:.2f}s, looped {len(processed_clips)-len(base_clips)} clips")
-     
-    # merge video clips progressively, avoid loading all videos at once to avoid memory overflow
-    logger.info("Starting clip merging process")
-    if not processed_clips:
-        logger.warning("No clips available for merging")
-        return combined_video_path
+            additional_clips.append(clip_info)
+            total_duration += clip_info.duration
+        final_clips.extend(additional_clips)
     
-    # if there is only one clip, use it directly
-    if len(processed_clips) == 1:
-        logger.info("Using single clip directly")
-        shutil.copy(processed_clips[0].file_path, combined_video_path)
-        delete_files(processed_clips)
-        logger.info("Video combining completed")
-        return combined_video_path
+    logger.info(f"Selected {len(final_clips)} clips for final video (total duration: {total_duration:.2f}s)")
     
-    # create initial video file as base
-    base_clip_path = processed_clips[0].file_path
-    temp_merged_video = f"{output_dir}/temp-merged-video.mp4"
-    temp_merged_next = f"{output_dir}/temp-merged-next.mp4"
+    # Step 2: Create the final video using a single concatenation for efficiency
+    logger.info("Creating final video from preprocessed clips")
     
-    # copy first clip as initial merged video
-    shutil.copy(base_clip_path, temp_merged_video)
+    # Load clips in memory one by one
+    video_clip_objects = []
+    temp_files_to_delete = []
     
-    # merge remaining video clips one by one
-    total_merges = len(processed_clips) - 1
-    for i, clip in enumerate(processed_clips[1:], 1):
-        logger.info(f"Merging clip {i}/{total_merges}, duration: {clip.duration:.2f}s")
+    try:
+        # Store all clip file paths for later deletion
+        clip_files = [clip.file_path for clip in final_clips]
+        temp_files_to_delete.extend(clip_files)
         
-        # Update progress if callback provided (offset progress to account for previous steps)
+        # Process clips with optimal memory usage
+        for i, clip_info in enumerate(final_clips):
+            logger.info(f"Loading clip {i+1}/{len(final_clips)}")
+            
+            # Update progress if callback provided
+            if progress_callback:
+                progress_callback(0.5 + (i / len(final_clips)) * 0.4)  # 50-90% for clip loading
+                
+            try:
+                # Create a clip object with minimal memory footprint
+                with VideoFileClip(clip_info.file_path) as clip:
+                    # Create subclip that references the original file but doesn't load all frames
+                    subclip = clip.without_audio()
+                    video_clip_objects.append(subclip)
+            except Exception as e:
+                logger.error(f"Failed to load clip {i+1}: {str(e)}")
+        
+        if not video_clip_objects:
+            logger.error("No video clips could be loaded!")
+            return combined_video_path
+        
+        # Step 3: Concatenate all clips in a single operation
+        logger.info(f"Concatenating {len(video_clip_objects)} clips")
+        
+        final_video_without_audio = concatenate_videoclips(
+            video_clip_objects, 
+            method="compose"  # Use compose method for faster concatenation
+        )
+        
+        # Add audio to the video
+        audio_clip = AudioFileClip(audio_file)
+        final_video = final_video_without_audio.with_audio(audio_clip)
+        
+        # Write the final video
         if progress_callback:
-            progress_callback(0.5 + (i / total_merges) * 0.5)
+            progress_callback(0.9)  # 90% after concatenation
+            
+        # Use hardware acceleration for final render
+        gpu_params = utils.get_gpu_acceleration_params()
+        logger.info(f"Writing final video to {combined_video_path}")
+        final_video.write_videofile(
+            combined_video_path,
+            temp_audiofile_path=output_dir,
+            threads=threads,
+            logger=None,
+            fps=fps,
+            audio_codec=audio_codec,
+            codec=video_codec,
+            **gpu_params
+        )
         
-        try:
-            # load current base video and next clip to merge
-            base_clip = VideoFileClip(temp_merged_video)
-            next_clip = VideoFileClip(clip.file_path)
-            
-            # merge these two clips
-            merged_clip = concatenate_videoclips([base_clip, next_clip])
-
-            # save merged result to temp file
-            gpu_params = utils.get_gpu_acceleration_params()
-            merged_clip.write_videofile(
-                filename=temp_merged_next,
-                threads=threads,
-                logger=None,
-                temp_audiofile_path=output_dir,
-                audio_codec=audio_codec,
-                fps=fps,
-                **gpu_params
-            )
-            
-            # Close clips and force garbage collection
-            close_clip(base_clip)
-            close_clip(next_clip)
-            close_clip(merged_clip)
-            base_clip = next_clip = merged_clip = None
-            gc.collect()
-            
-            # replace base file with new merged file
-            delete_files(temp_merged_video)
-            os.rename(temp_merged_next, temp_merged_video)
-            
-        except Exception as e:
-            logger.error(f"Failed to merge clip {i}: {str(e)}")
-            continue
+        # Clean up
+        for clip in video_clip_objects:
+            close_clip(clip)
+        close_clip(final_video)
+        close_clip(final_video_without_audio)
+        close_clip(audio_clip)
+        
+    except Exception as e:
+        logger.error(f"Error creating final video: {str(e)}")
+    finally:
+        # Delete all temporary files
+        delete_files(temp_files_to_delete)
+        gc.collect()
     
-    # after merging, rename final result to target file name
-    os.rename(temp_merged_video, combined_video_path)
+    if progress_callback:
+        progress_callback(1.0)  # 100% when done
     
-    # clean temp files
-    clip_files = [clip.file_path for clip in processed_clips]
-    delete_files(clip_files)
-            
-    logger.info("Video combining completed")
+    logger.success("Video combining completed successfully")
     return combined_video_path
 
 
@@ -430,93 +339,25 @@ def generate_video(
     aspect = VideoAspect(params.video_aspect)
     video_width, video_height = aspect.to_resolution()
 
-    logger.info(f"generating video: {video_width} x {video_height}")
+    logger.info(f"Generating final video: {video_width} x {video_height}")
     logger.info(f"  ① video: {video_path}")
     logger.info(f"  ② audio: {audio_path}")
     logger.info(f"  ③ subtitle: {subtitle_path}")
     logger.info(f"  ④ output: {output_file}")
 
-    # https://github.com/Sandeepgaddam5432/UnQTube2/issues/217
-    # PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'final-1.mp4.tempTEMP_MPY_wvf_snd.mp3'
-    # write into the same directory as the output file
+    # Write into the same directory as the output file
     output_dir = os.path.dirname(output_file)
-
-    font_path = ""
-    if params.subtitle_enabled:
-        if not params.font_name:
-            params.font_name = "STHeitiMedium.ttc"
-        font_path = os.path.join(utils.font_dir(), params.font_name)
-        if os.name == "nt":
-            font_path = font_path.replace("\\", "/")
-
-        logger.info(f"  ⑤ font: {font_path}")
-
-    def create_text_clip(subtitle_item):
-        params.font_size = int(params.font_size)
-        params.stroke_width = int(params.stroke_width)
-        phrase = subtitle_item[1]
-        max_width = video_width * 0.9
-        wrapped_txt, txt_height = wrap_text(
-            phrase, max_width=max_width, font=font_path, fontsize=params.font_size
-        )
-        interline = int(params.font_size * 0.25)
-        size=(int(max_width), int(txt_height + params.font_size * 0.25 + (interline * (wrapped_txt.count("\n") + 1))))
-
-        _clip = TextClip(
-            text=wrapped_txt,
-            font=font_path,
-            font_size=params.font_size,
-            color=params.text_fore_color,
-            bg_color=params.text_background_color,
-            stroke_color=params.stroke_color,
-            stroke_width=params.stroke_width,
-            # interline=interline,
-            # size=size,
-        )
-        duration = subtitle_item[0][1] - subtitle_item[0][0]
-        _clip = _clip.with_start(subtitle_item[0][0])
-        _clip = _clip.with_end(subtitle_item[0][1])
-        _clip = _clip.with_duration(duration)
-        if params.subtitle_position == "bottom":
-            _clip = _clip.with_position(("center", video_height * 0.95 - _clip.h))
-        elif params.subtitle_position == "top":
-            _clip = _clip.with_position(("center", video_height * 0.05))
-        elif params.subtitle_position == "custom":
-            # Ensure the subtitle is fully within the screen bounds
-            margin = 10  # Additional margin, in pixels
-            max_y = video_height - _clip.h - margin
-            min_y = margin
-            custom_y = (video_height - _clip.h) * (params.custom_position / 100)
-            custom_y = max(
-                min_y, min(custom_y, max_y)
-            )  # Constrain the y value within the valid range
-            _clip = _clip.with_position(("center", custom_y))
-        else:  # center
-            _clip = _clip.with_position(("center", "center"))
-        return _clip
-
+    
+    # Create intermediate video with audio but no subtitles
+    video_with_audio = f"{output_dir}/video_with_audio_temp.mp4"
+    
+    # Process video with audio first
     video_clip = VideoFileClip(video_path).without_audio()
     audio_clip = AudioFileClip(audio_path).with_effects(
         [afx.MultiplyVolume(params.voice_volume)]
     )
 
-    def make_textclip(text):
-        return TextClip(
-            text=text,
-            font=font_path,
-            font_size=params.font_size,
-        )
-
-    if subtitle_path and os.path.exists(subtitle_path):
-        sub = SubtitlesClip(
-            subtitles=subtitle_path, encoding="utf-8", make_textclip=make_textclip
-        )
-        text_clips = []
-        for item in sub.subtitles:
-            clip = create_text_clip(subtitle_item=item)
-            text_clips.append(clip)
-        video_clip = CompositeVideoClip([video_clip, *text_clips])
-
+    # Add background music if specified
     bgm_file = get_bgm_file(bgm_type=params.bgm_type, bgm_file=params.bgm_file)
     if bgm_file:
         try:
@@ -529,12 +370,16 @@ def generate_video(
             )
             audio_clip = CompositeAudioClip([audio_clip, bgm_clip])
         except Exception as e:
-            logger.error(f"failed to add bgm: {str(e)}")
+            logger.error(f"Failed to add bgm: {str(e)}")
 
+    # Add audio to video
     video_clip = video_clip.with_audio(audio_clip)
+    
+    # Write intermediate video with audio
     gpu_params = utils.get_gpu_acceleration_params()
+    logger.info(f"Writing intermediate video with audio to {video_with_audio}")
     video_clip.write_videofile(
-        output_file,
+        video_with_audio,
         audio_codec=audio_codec,
         temp_audiofile_path=output_dir,
         threads=params.n_threads or 2,
@@ -542,8 +387,308 @@ def generate_video(
         fps=fps,
         **gpu_params
     )
-    video_clip.close()
-    del video_clip
+    
+    # Clean up MoviePy objects
+    close_clip(video_clip)
+    close_clip(audio_clip)
+    
+    # If no subtitles or subtitle rendering disabled, just rename the file and return
+    if not subtitle_path or not os.path.exists(subtitle_path) or not params.subtitle_enabled:
+        logger.info("No subtitles to add, using video with audio as final output")
+        shutil.move(video_with_audio, output_file)
+        return
+    
+    # Process subtitles with FFmpeg for much better performance
+    logger.info("Adding subtitles using FFmpeg for optimal performance")
+    
+    # Prepare font path
+    if not params.font_name:
+        params.font_name = "STHeitiMedium.ttc"
+    font_path = os.path.join(utils.font_dir(), params.font_name)
+    if os.name == "nt":
+        font_path = font_path.replace("\\", "/")
+    logger.info(f"Using font: {font_path}")
+    
+    # Calculate subtitle position based on params
+    position = "center" 
+    if params.subtitle_position == "bottom":
+        position = "10"  # 10% from bottom
+    elif params.subtitle_position == "top":
+        position = "90"  # 90% from bottom (10% from top)
+    elif params.subtitle_position == "custom":
+        # Convert percentage to FFmpeg compatible value (0-100)
+        position = str(100 - params.custom_position)  # Invert because FFmpeg counts from bottom
+    
+    # Prepare subtitle style string
+    # FontSize is in points, convert from pixels using a rough approximation
+    font_size_pts = int(params.font_size * 0.75)  
+    
+    # Convert hex colors to FFmpeg format if needed
+    text_color = params.text_fore_color.lstrip('#')
+    if len(text_color) == 6:
+        text_color = f"&H{text_color}&"
+    
+    outline_color = params.stroke_color.lstrip('#')
+    if len(outline_color) == 6:
+        outline_color = f"&H{outline_color}&"
+    
+    # Create the style string
+    subtitle_style = (
+        f"FontName={os.path.basename(font_path)},"
+        f"FontSize={font_size_pts},"
+        f"PrimaryColour={text_color},"
+        f"OutlineColour={outline_color},"
+        f"Outline={params.stroke_width},"
+        f"Alignment=2,"  # Center align text
+        f"BorderStyle=1"  # Outline border
+    )
+    
+    # Use hardware acceleration for the final render
+    gpu_params = utils.get_gpu_acceleration_params()
+    hw_encoder = gpu_params.get("ffmpeg_params", ["-c:v", "libx264"])
+    
+    # Build and execute FFmpeg command
+    try:
+        ffmpeg_cmd = [
+            "ffmpeg", "-y",
+            "-i", video_with_audio,
+            "-vf", f"subtitles='{subtitle_path}':force_style='{subtitle_style}'",
+            "-c:v", hw_encoder[1],  # Video codec from GPU params
+            "-preset", "fast",
+            "-c:a", "copy",  # Copy audio stream unchanged
+            output_file
+        ]
+        
+        logger.info("Running FFmpeg command to burn subtitles")
+        subprocess.run(ffmpeg_cmd, check=True)
+        logger.success("Subtitles successfully added with FFmpeg")
+        
+    except Exception as e:
+        logger.error(f"Failed to add subtitles with FFmpeg: {str(e)}")
+        logger.warning("Falling back to intermediate video without subtitles")
+        shutil.copy(video_with_audio, output_file)
+    
+    # Clean up temporary files
+    try:
+        os.remove(video_with_audio)
+    except:
+        pass
+
+
+def _preprocess_clip_with_ffmpeg(
+    clip_idx: int,
+    video_path: str, 
+    start_time: float,
+    end_time: float,
+    output_dir: str,
+    target_width: int, 
+    target_height: int,
+    transition_mode: VideoTransitionMode = None,
+) -> str:
+    """
+    Preprocess a single video clip using direct FFmpeg commands for maximum performance
+    
+    Args:
+        clip_idx: Index of the clip for output filename
+        video_path: Source video file
+        start_time: Start time for the subclip
+        end_time: End time for the subclip
+        output_dir: Directory to write the processed clip to
+        target_width: Target width for resizing
+        target_height: Target height for resizing
+        transition_mode: Video transition mode
+    
+    Returns:
+        Path to the preprocessed video file
+    """
+    try:
+        clip_file = f"{output_dir}/ffproc-clip-{clip_idx}.mp4"
+        
+        # Get source video info using FFprobe
+        probe_cmd = [
+            "ffprobe",
+            "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=width,height",
+            "-of", "json",
+            video_path
+        ]
+        result = subprocess.run(probe_cmd, capture_output=True, text=True)
+        
+        # Extract source dimensions, defaults to target if ffprobe fails
+        source_width, source_height = target_width, target_height
+        try:
+            import json
+            info = json.loads(result.stdout)
+            if 'streams' in info and len(info['streams']) > 0:
+                stream = info['streams'][0]
+                source_width = int(stream.get('width', target_width))
+                source_height = int(stream.get('height', target_height))
+        except Exception as e:
+            logger.warning(f"Failed to get video dimensions, using defaults: {str(e)}")
+        
+        # Calculate the proper padding for letterboxing/pillarboxing
+        source_ratio = source_width / source_height
+        target_ratio = target_width / target_height
+        
+        # Apply FFmpeg filters for scaling and padding
+        if abs(source_ratio - target_ratio) < 0.01:
+            # Same aspect ratio, just scale
+            scale_filter = f"scale={target_width}:{target_height}"
+        else:
+            # Different aspect ratio, scale and pad
+            scale_filter = f"scale='if(gt(dar,{target_width}/{target_height}),min({target_width},iw),-1):if(gt(dar,{target_width}/{target_height}),-1,min({target_height},ih))',pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2:black"
+
+        # Hardware acceleration parameters
+        gpu_params = utils.get_gpu_acceleration_params()
+        hw_encoder = gpu_params.get("ffmpeg_params", ["-c:v", "libx264"])
+        
+        # Base command for video extraction and processing
+        ffmpeg_cmd = [
+            "ffmpeg", "-y",  # Overwrite output file if it exists
+            "-ss", f"{start_time:.3f}",  # Start time
+            "-i", video_path,  # Input file
+            "-t", f"{end_time - start_time:.3f}",  # Duration
+            "-vf", scale_filter,  # Video filters
+            "-c:v", hw_encoder[1],  # Video codec (from hw_encoder)
+            "-preset", "ultrafast",  # For maximum speed
+            "-tune", "zerolatency",
+            "-pix_fmt", "yuv420p",  # Ensure compatibility
+            "-an",  # No audio
+            clip_file
+        ]
+        
+        # Run FFmpeg
+        logger.info(f"Processing clip {clip_idx} with FFmpeg: {os.path.basename(video_path)} ({start_time:.2f}s-{end_time:.2f}s)")
+        subprocess.run(ffmpeg_cmd, check=True)
+        
+        # Verify output file exists and has valid size
+        if os.path.exists(clip_file) and os.path.getsize(clip_file) > 0:
+            return clip_file
+            
+    except Exception as e:
+        logger.error(f"FFmpeg preprocessing failed for clip {clip_idx}: {str(e)}")
+    
+    return ""
+
+def preprocess_clips_in_parallel(
+    video_paths: List[str],
+    video_aspect: VideoAspect,
+    video_resolution: VideoResolution,
+    video_transition_mode: VideoTransitionMode,
+    max_clip_duration: int,
+    output_dir: str,
+    max_workers: int = 4,
+) -> List[SubClippedVideoClip]:
+    """
+    Preprocess videos using FFmpeg in parallel for much faster processing
+    
+    Args:
+        video_paths: Paths to source video files
+        video_aspect: Target aspect ratio
+        video_resolution: Target resolution
+        video_transition_mode: Video transition mode
+        max_clip_duration: Maximum duration for each clip
+        output_dir: Directory to save processed clips
+        max_workers: Number of parallel workers
+        
+    Returns:
+        List of SubClippedVideoClip objects with paths to preprocessed videos
+    """
+    # Calculate target resolution
+    aspect = VideoAspect(video_aspect)
+    if aspect == VideoAspect.portrait:  # 9:16
+        base_width, base_height = 720, 1280
+    elif aspect == VideoAspect.square:  # 1:1
+        base_width, base_height = 720, 720
+    else:  # 16:9
+        base_width, base_height = 1280, 720
+    
+    # Apply resolution multiplier
+    resolution_multiplier = VideoResolution(video_resolution).to_multiplier()
+    target_width = int(base_width * resolution_multiplier)
+    target_height = int(base_height * resolution_multiplier)
+    
+    logger.info(f"Preprocessing {len(video_paths)} videos with FFmpeg at {target_width}x{target_height}")
+    
+    # Prepare work items for parallel processing
+    work_items = []
+    clip_idx = 0
+    
+    for video_path in video_paths:
+        try:
+            # Get video duration using FFprobe
+            ffprobe_cmd = [
+                "ffprobe", 
+                "-v", "error", 
+                "-show_entries", "format=duration", 
+                "-of", "default=noprint_wrappers=1:nokey=1", 
+                video_path
+            ]
+            result = subprocess.run(ffprobe_cmd, capture_output=True, text=True)
+            clip_duration = float(result.stdout.strip())
+            
+            start_time = 0
+            while start_time < clip_duration:
+                end_time = min(start_time + max_clip_duration, clip_duration)
+                if end_time - start_time >= 1.0:  # Only include clips of at least 1 second
+                    work_items.append({
+                        'clip_idx': clip_idx,
+                        'video_path': video_path,
+                        'start_time': start_time,
+                        'end_time': end_time,
+                        'output_dir': output_dir,
+                        'target_width': target_width,
+                        'target_height': target_height,
+                        'transition_mode': video_transition_mode
+                    })
+                    clip_idx += 1
+                start_time = end_time
+        except Exception as e:
+            logger.error(f"Failed to get duration for {video_path}: {str(e)}")
+    
+    # Process clips in parallel
+    logger.info(f"Starting parallel preprocessing of {len(work_items)} video segments with {max_workers} workers")
+    processed_clips = []
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all preprocessing tasks
+        future_to_item = {
+            executor.submit(
+                _preprocess_clip_with_ffmpeg,
+                item['clip_idx'],
+                item['video_path'], 
+                item['start_time'], 
+                item['end_time'],
+                item['output_dir'], 
+                item['target_width'], 
+                item['target_height'],
+                item['transition_mode']
+            ): item for item in work_items
+        }
+        
+        # Process results as they complete
+        for future in concurrent.futures.as_completed(future_to_item):
+            item = future_to_item[future]
+            try:
+                processed_clip_path = future.result()
+                if processed_clip_path:
+                    duration = item['end_time'] - item['start_time']
+                    clip_obj = SubClippedVideoClip(
+                        file_path=processed_clip_path, 
+                        duration=duration,
+                        width=item['target_width'], 
+                        height=item['target_height']
+                    )
+                    processed_clips.append(clip_obj)
+                    logger.info(f"Successfully preprocessed clip {item['clip_idx']}")
+                else:
+                    logger.warning(f"Failed to preprocess clip {item['clip_idx']}")
+            except Exception as e:
+                logger.error(f"Error processing future for clip {item['clip_idx']}: {str(e)}")
+    
+    logger.success(f"Completed preprocessing {len(processed_clips)}/{len(work_items)} clips")
+    return processed_clips
 
 
 def preprocess_video(materials: List[MaterialInfo], clip_duration=4):

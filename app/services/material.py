@@ -148,10 +148,10 @@ def search_videos_pixabay(
 def save_video(video_url: str, save_dir: str = "") -> str:
     if not save_dir:
         save_dir = utils.storage_dir("cache_videos")
-
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
-
+    
+    # Directory is now created in the download_videos function, no need to create it here
+    # This prevents race conditions in parallel downloads
+    
     url_without_query = video_url.split("?")[0]
     url_hash = utils.md5(url_without_query)
     video_id = f"vid-{url_hash}"
@@ -236,6 +236,11 @@ def download_videos(
         material_directory = utils.task_dir(task_id)
     elif material_directory and not os.path.isdir(material_directory):
         material_directory = ""
+        
+    # Create the download directory before starting downloads to avoid race conditions
+    save_dir = material_directory or utils.storage_dir("cache_videos")
+    os.makedirs(save_dir, exist_ok=True)
+    logger.info(f"Download directory prepared: {save_dir}")
 
     if video_contact_mode.value == VideoConcatMode.random.value:
         random.shuffle(valid_video_items)
