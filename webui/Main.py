@@ -481,29 +481,35 @@ with st.sidebar:
                                 if response.status_code == 200:
                                     # Display the audio preview from API
                                     st.audio(response.content, format="audio/mp3")
-                                    return
+                                    # Using a flag instead of return statement
+                                    preview_success = True
+                                else:
+                                    preview_success = False
                             except Exception as api_err:
                                 logger.warning(f"API preview failed, falling back to local: {str(api_err)}")
+                                preview_success = False
                                 # Fall back to local generation if API fails
                             
-                            # Fallback: Create a temporary file for the audio locally
-                            preview_file = utils.storage_dir("temp", create=True)
-                            preview_file = os.path.join(preview_file, f"voice_preview_{datetime.now().strftime('%Y%m%d%H%M%S')}.mp3")
-                            
-                            # Generate preview audio using the same TTS function used in video generation
-                            sub_maker = voice.tts(
-                                text=sample_text,
-                                voice_name=voice_to_preview,
-                                voice_rate=voice_rate,
-                                voice_file=preview_file,
-                                voice_volume=voice_volume
-                            )
-                            
-                            if os.path.exists(preview_file):
-                                # Display an audio player with the preview
-                                st.audio(preview_file)
-                            else:
-                                st.error(tr("Failed to generate voice preview."))
+                            # Only proceed with local generation if API call failed
+                            if not preview_success:
+                                # Fallback: Create a temporary file for the audio locally
+                                preview_file = utils.storage_dir("temp", create=True)
+                                preview_file = os.path.join(preview_file, f"voice_preview_{datetime.now().strftime('%Y%m%d%H%M%S')}.mp3")
+                                
+                                # Generate preview audio using the same TTS function used in video generation
+                                sub_maker = voice.tts(
+                                    text=sample_text,
+                                    voice_name=voice_to_preview,
+                                    voice_rate=voice_rate,
+                                    voice_file=preview_file,
+                                    voice_volume=voice_volume
+                                )
+                                
+                                if os.path.exists(preview_file):
+                                    # Display an audio player with the preview
+                                    st.audio(preview_file)
+                                else:
+                                    st.error(tr("Failed to generate voice preview."))
                         except Exception as e:
                             st.error(f"Error generating voice preview: {str(e)}")
                 else:
