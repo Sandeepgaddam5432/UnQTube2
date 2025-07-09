@@ -165,6 +165,7 @@ def generate_final_videos(
         params.video_concat_mode if params.video_count == 1 else VideoConcatMode.random
     )
     video_transition_mode = params.video_transition_mode
+    video_resolution = params.video_resolution
 
     _progress = 50
     for i in range(params.video_count):
@@ -187,6 +188,7 @@ def generate_final_videos(
             video_aspect=params.video_aspect,
             video_concat_mode=video_concat_mode,
             video_transition_mode=video_transition_mode,
+            video_resolution=video_resolution,
             max_clip_duration=params.video_clip_duration,
             threads=params.n_threads,
             progress_callback=progress_callback,

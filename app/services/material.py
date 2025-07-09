@@ -1,5 +1,6 @@
 import os
 import random
+import concurrent.futures
 from typing import List
 from urllib.parse import urlencode
 
@@ -202,6 +203,7 @@ def download_videos(
     video_contact_mode: VideoConcatMode = VideoConcatMode.random,
     audio_duration: float = 0.0,
     max_clip_duration: int = 5,
+    max_workers: int = 4,
 ) -> List[str]:
     valid_video_items = []
     valid_video_urls = []
@@ -210,6 +212,7 @@ def download_videos(
     if source == "pixabay":
         search_videos = search_videos_pixabay
 
+    # First, gather all video items from search terms
     for search_term in search_terms:
         video_items = search_videos(
             search_term=search_term,
@@ -227,7 +230,6 @@ def download_videos(
     logger.info(
         f"found total videos: {len(valid_video_items)}, required duration: {audio_duration} seconds, found duration: {found_duration} seconds"
     )
-    video_paths = []
 
     material_directory = config.app.get("material_directory", "").strip()
     if material_directory == "task":
@@ -238,25 +240,43 @@ def download_videos(
     if video_contact_mode.value == VideoConcatMode.random.value:
         random.shuffle(valid_video_items)
 
+    # Determine how many videos we need to download to meet the duration requirement
+    required_videos = []
     total_duration = 0.0
     for item in valid_video_items:
-        try:
-            logger.info(f"downloading video: {item.url}")
-            saved_video_path = save_video(
-                video_url=item.url, save_dir=material_directory
-            )
-            if saved_video_path:
-                logger.info(f"video saved: {saved_video_path}")
-                video_paths.append(saved_video_path)
-                seconds = min(max_clip_duration, item.duration)
-                total_duration += seconds
-                if total_duration > audio_duration:
-                    logger.info(
-                        f"total duration of downloaded videos: {total_duration} seconds, skip downloading more"
-                    )
-                    break
-        except Exception as e:
-            logger.error(f"failed to download video: {utils.to_json(item)} => {str(e)}")
+        seconds = min(max_clip_duration, item.duration)
+        if total_duration + seconds <= audio_duration * 1.2:  # Add 20% buffer
+            required_videos.append(item)
+            total_duration += seconds
+        else:
+            # We have enough videos to meet the duration
+            if total_duration >= audio_duration:
+                break
+    
+    logger.info(f"Downloading {len(required_videos)} videos in parallel with {max_workers} workers")
+    
+    # Use ThreadPoolExecutor for parallel downloads
+    video_paths = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Create a map of futures to video items for tracking
+        future_to_item = {
+            executor.submit(save_video, item.url, material_directory): item 
+            for item in required_videos
+        }
+        
+        # Process completed downloads as they finish
+        for future in concurrent.futures.as_completed(future_to_item):
+            item = future_to_item[future]
+            try:
+                saved_video_path = future.result()
+                if saved_video_path:
+                    logger.info(f"video saved: {saved_video_path}")
+                    video_paths.append(saved_video_path)
+                else:
+                    logger.warning(f"failed to save video: {item.url}")
+            except Exception as e:
+                logger.error(f"failed to download video: {item.url} => {str(e)}")
+    
     logger.success(f"downloaded {len(video_paths)} videos")
     return video_paths
 

@@ -42,6 +42,21 @@ class VideoAspect(str, Enum):
         return 1080, 1920
 
 
+class VideoResolution(str, Enum):
+    hd_720p = "720p"
+    full_hd = "1080p"
+    ultra_hd = "4K"
+    
+    def to_multiplier(self):
+        if self == VideoResolution.hd_720p.value:
+            return 1.0  # Base resolution
+        elif self == VideoResolution.full_hd.value:
+            return 1.5  # 1.5x of 720p = 1080p
+        elif self == VideoResolution.ultra_hd.value:
+            return 3.0  # 3x of 720p = 4K (2160p)
+        return 1.0
+
+
 class _Config:
     arbitrary_types_allowed = True
 
@@ -72,6 +87,7 @@ class VideoParams(BaseModel):
     video_script: str = ""  # Script used to generate the video
     video_terms: Optional[str | list] = None  # Keywords used to generate the video
     video_aspect: Optional[VideoAspect] = VideoAspect.portrait.value
+    video_resolution: Optional[VideoResolution] = VideoResolution.hd_720p.value
     video_concat_mode: Optional[VideoConcatMode] = VideoConcatMode.random.value
     video_transition_mode: Optional[VideoTransitionMode] = None
     video_clip_duration: Optional[int] = 5

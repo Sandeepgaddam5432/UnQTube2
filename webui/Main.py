@@ -22,6 +22,7 @@ from app.models.schema import (
     VideoConcatMode,
     VideoParams,
     VideoTransitionMode,
+    VideoResolution,
 )
 from app.services import llm, voice
 from app.services import task as tm
@@ -462,7 +463,30 @@ with st.sidebar:
                             # Define sample text for preview
                             sample_text = tr("Hello, this is a preview of my voice for the UnQTube2 project.")
                             
-                            # Create a temporary file for the audio
+                            # First try the API endpoint (faster)
+                            try:
+                                import requests
+                                api_url = "http://localhost:8080/audio/preview"
+                                
+                                response = requests.post(
+                                    api_url,
+                                    json={
+                                        "text": sample_text,
+                                        "voice_name": voice_to_preview,
+                                        "voice_rate": voice_rate
+                                    },
+                                    timeout=15
+                                )
+                                
+                                if response.status_code == 200:
+                                    # Display the audio preview from API
+                                    st.audio(response.content, format="audio/mp3")
+                                    return
+                            except Exception as api_err:
+                                logger.warning(f"API preview failed, falling back to local: {str(api_err)}")
+                                # Fall back to local generation if API fails
+                            
+                            # Fallback: Create a temporary file for the audio locally
                             preview_file = utils.storage_dir("temp", create=True)
                             preview_file = os.path.join(preview_file, f"voice_preview_{datetime.now().strftime('%Y%m%d%H%M%S')}.mp3")
                             
@@ -714,6 +738,19 @@ with tabs[1]:
             format_func=lambda x: video_aspect_ratios[x][0],
         )
         params.video_aspect = VideoAspect(video_aspect_ratios[selected_index][1])
+
+        # Add video resolution options
+        video_resolutions = [
+            (tr("HD") + " (720p)", VideoResolution.hd_720p.value),
+            (tr("Full HD") + " (1080p)", VideoResolution.full_hd.value),
+            (tr("Ultra HD") + " (4K)", VideoResolution.ultra_hd.value),
+        ]
+        selected_index = st.selectbox(
+            tr("Video Resolution"),
+            options=range(len(video_resolutions)),
+            format_func=lambda x: video_resolutions[x][0],
+        )
+        params.video_resolution = VideoResolution(video_resolutions[selected_index][1])
 
         video_concat_modes = [
             (tr("Sequential"), "sequential"),

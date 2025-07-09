@@ -10,6 +10,7 @@ import urllib3
 from loguru import logger
 
 from app.models import const
+from app.config import config
 
 urllib3.disable_warnings()
 
@@ -228,3 +229,53 @@ def load_locales(i18n_dir):
 
 def parse_extension(filename):
     return Path(filename).suffix.lower().lstrip('.')
+
+
+def get_gpu_acceleration_params():
+    """
+    Determine the appropriate GPU acceleration parameters for video encoding
+    based on the system and configuration.
+    
+    Returns:
+        dict: Dictionary with 'ffmpeg_params' for hardware acceleration, or empty if not available
+    """
+    acc_type = config.app.get("gpu_acceleration", "auto").lower()
+    
+    # If explicitly disabled, return empty params
+    if acc_type == "none":
+        return {}
+    
+    # Helper function to check if a command is available
+    def cmd_exists(cmd):
+        return shutil.which(cmd) is not None
+    
+    # Check if ffmpeg is available
+    if not cmd_exists("ffmpeg"):
+        return {}
+        
+    # Auto-detect available hardware encoders
+    if acc_type == "auto":
+        system = platform.system().lower()
+        
+        # Check for NVIDIA GPU encoder
+        if cmd_exists("nvidia-smi"):
+            return {'ffmpeg_params': ['-c:v', 'h264_nvenc', '-preset', 'fast']}
+            
+        # Check for macOS VideoToolbox
+        elif system == "darwin":
+            return {'ffmpeg_params': ['-c:v', 'h264_videotoolbox', '-q:v', '30']}
+            
+        # Check for Intel QuickSync
+        elif cmd_exists("vainfo") or os.path.exists("/dev/dri"):
+            return {'ffmpeg_params': ['-c:v', 'h264_qsv', '-preset', 'fast']}
+    
+    # Explicit encoder selection
+    if acc_type == "nvidia":
+        return {'ffmpeg_params': ['-c:v', 'h264_nvenc', '-preset', 'fast']}
+    elif acc_type == "videotoolbox":
+        return {'ffmpeg_params': ['-c:v', 'h264_videotoolbox', '-q:v', '30']}
+    elif acc_type == "qsv":
+        return {'ffmpeg_params': ['-c:v', 'h264_qsv', '-preset', 'fast']}
+        
+    # Default to no acceleration if nothing matches
+    return {}

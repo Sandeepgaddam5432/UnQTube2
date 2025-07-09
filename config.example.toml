@@ -4,6 +4,15 @@ video_source = "pexels" # "pexels" or "pixabay"
 # Whether to hide configuration panel
 hide_config = false
 
+# Enable GPU acceleration for video rendering (if hardware is available)
+# Supported options: "auto", "nvidia", "videotoolbox", "qsv", "none"
+# - auto: Automatically detect the best hardware encoder
+# - nvidia: Use NVIDIA GPU encoder (h264_nvenc)
+# - videotoolbox: Use macOS VideoToolbox encoder (h264_videotoolbox)
+# - qsv: Use Intel QuickSync encoder (h264_qsv)
+# - none: Disable hardware acceleration
+gpu_acceleration = "auto"
+
 # Pexels API Key
 # Register at https://www.pexels.com/api/ to get your API key.
 # You can use multiple keys to avoid rate limits.

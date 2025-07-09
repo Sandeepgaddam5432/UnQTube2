@@ -15,6 +15,7 @@ from moviepy import (
     TextClip,
     VideoFileClip,
     afx,
+    vfx,
     concatenate_videoclips,
 )
 from moviepy.video.tools.subtitles import SubtitlesClip
@@ -27,6 +28,7 @@ from app.models.schema import (
     VideoConcatMode,
     VideoParams,
     VideoTransitionMode,
+    VideoResolution,
 )
 from app.services.utils import video_effects
 from app.utils import utils
@@ -121,6 +123,7 @@ def combine_videos(
     video_aspect: VideoAspect = VideoAspect.portrait,
     video_concat_mode: VideoConcatMode = VideoConcatMode.random,
     video_transition_mode: VideoTransitionMode = None,
+    video_resolution: VideoResolution = VideoResolution.hd_720p,
     max_clip_duration: int = 5,
     threads: int = 2,
     progress_callback = None,
@@ -137,15 +140,22 @@ def combine_videos(
     aspect = VideoAspect(video_aspect)
     video_width, video_height = aspect.to_resolution()
     
-    # Set target resolution to 720p equivalent based on aspect ratio
-    if aspect == VideoAspect.portrait:  # 9:16
-        target_width = 720
-        target_height = 1280
-    else:  # 16:9
-        target_width = 1280
-        target_height = 720
+    # Apply resolution multiplier based on user selection
+    resolution_multiplier = VideoResolution(video_resolution).to_multiplier()
+    target_width = int(video_width * resolution_multiplier)
+    target_height = int(video_height * resolution_multiplier)
     
-    logger.info(f"Target resolution for processing: {target_width}x{target_height} (original: {video_width}x{video_height})")
+    # Set target resolution based on selected quality
+    if aspect == VideoAspect.portrait:  # 9:16
+        base_width, base_height = 720, 1280
+    else:  # 16:9
+        base_width, base_height = 1280, 720
+    
+    # Apply the multiplier to get the actual resolution
+    target_width = int(base_width * resolution_multiplier)
+    target_height = int(base_height * resolution_multiplier)
+    
+    logger.info(f"Target resolution for processing: {target_width}x{target_height} (original: {video_width}x{video_height}, multiplier: {resolution_multiplier})")
 
     processed_clips = []
     subclipped_items = []
@@ -202,7 +212,7 @@ def combine_videos(
             video_ratio = target_width / target_height
             
             if clip_ratio == video_ratio:
-                resized_clip = clip.resize(width=target_width, height=target_height)
+                resized_clip = clip.fx(vfx.resize, width=target_width, height=target_height)
             else:
                 if clip_ratio > video_ratio:
                     scale_factor = target_width / clip_w
@@ -213,7 +223,7 @@ def combine_videos(
                 new_height = int(clip_h * scale_factor)
 
                 background = ColorClip(size=(target_width, target_height), color=(0, 0, 0)).with_duration(clip_duration)
-                clip_resized = clip.resize(width=new_width, height=new_height).with_position("center")
+                clip_resized = clip.fx(vfx.resize, width=new_width, height=new_height).with_position("center")
                 resized_clip = CompositeVideoClip([background, clip_resized])
                 
                 # Explicitly close original clip to free memory
@@ -254,7 +264,8 @@ def combine_videos(
             # Write clip to temp file
             clip_file = f"{output_dir}/temp-clip-{i+1}.mp4"
             logger.info(f"Writing processed clip {i+1} to {os.path.basename(clip_file)}")
-            final_clip.write_videofile(clip_file, logger=None, fps=fps, codec=video_codec)
+            gpu_params = utils.get_gpu_acceleration_params()
+            final_clip.write_videofile(clip_file, logger=None, fps=fps, codec=video_codec, **gpu_params)
             
             # Close clips and force garbage collection
             close_clip(final_clip)
@@ -318,6 +329,7 @@ def combine_videos(
             merged_clip = concatenate_videoclips([base_clip, next_clip])
 
             # save merged result to temp file
+            gpu_params = utils.get_gpu_acceleration_params()
             merged_clip.write_videofile(
                 filename=temp_merged_next,
                 threads=threads,
@@ -325,6 +337,7 @@ def combine_videos(
                 temp_audiofile_path=output_dir,
                 audio_codec=audio_codec,
                 fps=fps,
+                **gpu_params
             )
             
             # Close clips and force garbage collection
@@ -519,6 +532,7 @@ def generate_video(
             logger.error(f"failed to add bgm: {str(e)}")
 
     video_clip = video_clip.with_audio(audio_clip)
+    gpu_params = utils.get_gpu_acceleration_params()
     video_clip.write_videofile(
         output_file,
         audio_codec=audio_codec,
@@ -526,6 +540,7 @@ def generate_video(
         threads=params.n_threads or 2,
         logger=None,
         fps=fps,
+        **gpu_params
     )
     video_clip.close()
     del video_clip
@@ -571,7 +586,8 @@ def preprocess_video(materials: List[MaterialInfo], clip_duration=4):
 
             # Output the video to a file.
             video_file = f"{material.url}.mp4"
-            final_clip.write_videofile(video_file, fps=30, logger=None)
+            gpu_params = utils.get_gpu_acceleration_params()
+            final_clip.write_videofile(video_file, fps=30, logger=None, **gpu_params)
             close_clip(clip)
             material.url = video_file
             logger.success(f"image processed: {video_file}")
