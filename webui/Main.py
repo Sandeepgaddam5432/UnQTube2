@@ -2,6 +2,7 @@ import os
 import platform
 import sys
 from uuid import uuid4
+from datetime import datetime
 
 import streamlit as st
 from loguru import logger
@@ -417,16 +418,31 @@ with st.sidebar:
     if saved_voice_name_index >= len(friendly_names) and friendly_names:
         saved_voice_name_index = 0
 
+    # Speech rate and volume - Define these BEFORE they're used in the voice preview
+    voice_rate = st.select_slider(
+        tr("Speech Rate"),
+        options=[0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.5, 1.8, 2.0],
+        value=config.ui.get("voice_rate", 1.0)
+    )
+    config.ui["voice_rate"] = voice_rate
+    
+    voice_volume = st.select_slider(
+        tr("Speech Volume"),
+        options=[0.6, 0.8, 1.0, 1.2, 1.5, 2.0, 3.0, 4.0, 5.0],
+        value=config.ui.get("voice_volume", 1.0)
+    )
+    config.ui["voice_volume"] = voice_volume
+
     # Ensure there are voices available
     if friendly_names:
         col1, col2 = st.columns([3, 1])
         
         with col1:
             selected_friendly_name = st.selectbox(
-            tr("Voice"),
-            options=list(friendly_names.keys()),
-            format_func=lambda x: friendly_names[x],
-            index=min(saved_voice_name_index, len(friendly_names) - 1) if friendly_names else 0,
+                tr("Voice"),
+                options=list(friendly_names.keys()),
+                format_func=lambda x: friendly_names[x],
+                index=min(saved_voice_name_index, len(friendly_names) - 1) if friendly_names else 0,
             )
             voice_name = selected_friendly_name
             config.ui["voice_name"] = voice_name
@@ -472,19 +488,6 @@ with st.sidebar:
         voice_name = ""
         config.ui["voice_name"] = ""
 
-    # Speech rate and volume
-    voice_rate = st.select_slider(
-        tr("Speech Rate"),
-        options=[0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.5, 1.8, 2.0],
-        value=1.0
-    )
-    
-    voice_volume = st.select_slider(
-        tr("Speech Volume"),
-        options=[0.6, 0.8, 1.0, 1.2, 1.5, 2.0, 3.0, 4.0, 5.0],
-        value=1.0
-    )
-    
     # TTS API settings based on selected service
     if selected_tts_server == "azure-tts-v2" or (
         voice_name and voice.is_azure_v2_voice(voice_name)
