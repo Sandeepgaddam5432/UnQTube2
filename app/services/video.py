@@ -398,6 +398,16 @@ def generate_video(
         shutil.move(video_with_audio, output_file)
         return
     
+    # Check for FFmpeg availability before attempting subtitle processing
+    ffmpeg_path = shutil.which('ffmpeg')
+    if not ffmpeg_path:
+        logger.error("FFmpeg not found in PATH. Cannot add subtitles with FFmpeg.")
+        logger.warning("Using intermediate video without subtitles as final output")
+        shutil.move(video_with_audio, output_file)
+        return
+    
+    logger.info(f"Using FFmpeg at: {ffmpeg_path} for subtitle processing")
+    
     # Process subtitles with FFmpeg for much better performance
     logger.info("Adding subtitles using FFmpeg for optimal performance")
     
@@ -450,7 +460,7 @@ def generate_video(
     # Build and execute FFmpeg command
     try:
         ffmpeg_cmd = [
-            "ffmpeg", "-y",
+            ffmpeg_path, "-y",
             "-i", video_with_audio,
             "-vf", f"subtitles='{subtitle_path}':force_style='{subtitle_style}'",
             "-c:v", hw_encoder[1],  # Video codec from GPU params
@@ -484,6 +494,8 @@ def _preprocess_clip_with_ffmpeg(
     target_width: int, 
     target_height: int,
     transition_mode: VideoTransitionMode = None,
+    ffmpeg_path: str = "ffmpeg",
+    ffprobe_path: str = "ffprobe",
 ) -> str:
     """
     Preprocess a single video clip using direct FFmpeg commands for maximum performance
@@ -497,6 +509,8 @@ def _preprocess_clip_with_ffmpeg(
         target_width: Target width for resizing
         target_height: Target height for resizing
         transition_mode: Video transition mode
+        ffmpeg_path: Path to ffmpeg executable
+        ffprobe_path: Path to ffprobe executable
     
     Returns:
         Path to the preprocessed video file
@@ -506,7 +520,7 @@ def _preprocess_clip_with_ffmpeg(
         
         # Get source video info using FFprobe
         probe_cmd = [
-            "ffprobe",
+            ffprobe_path,
             "-v", "error",
             "-select_streams", "v:0",
             "-show_entries", "stream=width,height",
@@ -545,7 +559,7 @@ def _preprocess_clip_with_ffmpeg(
         
         # Base command for video extraction and processing
         ffmpeg_cmd = [
-            "ffmpeg", "-y",  # Overwrite output file if it exists
+            ffmpeg_path, "-y",  # Overwrite output file if it exists
             "-ss", f"{start_time:.3f}",  # Start time
             "-i", video_path,  # Input file
             "-t", f"{end_time - start_time:.3f}",  # Duration
@@ -595,6 +609,21 @@ def preprocess_clips_in_parallel(
     Returns:
         List of SubClippedVideoClip objects with paths to preprocessed videos
     """
+    # Check for FFmpeg and FFprobe availability once before starting
+    ffmpeg_path = shutil.which('ffmpeg')
+    ffprobe_path = shutil.which('ffprobe')
+    
+    if not ffmpeg_path:
+        logger.error("FFmpeg not found in PATH. Please install FFmpeg to use this feature.")
+        return []
+        
+    if not ffprobe_path:
+        logger.error("FFprobe not found in PATH. Please install FFmpeg to use this feature.")
+        return []
+    
+    logger.info(f"Using FFmpeg at: {ffmpeg_path}")
+    logger.info(f"Using FFprobe at: {ffprobe_path}")
+    
     # Calculate target resolution
     aspect = VideoAspect(video_aspect)
     if aspect == VideoAspect.portrait:  # 9:16
@@ -619,7 +648,7 @@ def preprocess_clips_in_parallel(
         try:
             # Get video duration using FFprobe
             ffprobe_cmd = [
-                "ffprobe", 
+                ffprobe_path, 
                 "-v", "error", 
                 "-show_entries", "format=duration", 
                 "-of", "default=noprint_wrappers=1:nokey=1", 
@@ -640,7 +669,9 @@ def preprocess_clips_in_parallel(
                         'output_dir': output_dir,
                         'target_width': target_width,
                         'target_height': target_height,
-                        'transition_mode': video_transition_mode
+                        'transition_mode': video_transition_mode,
+                        'ffmpeg_path': ffmpeg_path,
+                        'ffprobe_path': ffprobe_path
                     })
                     clip_idx += 1
                 start_time = end_time
@@ -663,7 +694,9 @@ def preprocess_clips_in_parallel(
                 item['output_dir'], 
                 item['target_width'], 
                 item['target_height'],
-                item['transition_mode']
+                item['transition_mode'],
+                item['ffmpeg_path'],
+                item['ffprobe_path']
             ): item for item in work_items
         }
         
