@@ -365,6 +365,7 @@ with st.sidebar:
         options=range(len(tts_servers)),
         format_func=lambda x: tts_servers[x][1],
         index=saved_tts_server_index,
+        key="selected_tts_server"
     )
 
     selected_tts_server = tts_servers[selected_tts_server_index][0]
@@ -443,40 +444,46 @@ with st.sidebar:
                 options=list(friendly_names.keys()),
                 format_func=lambda x: friendly_names[x],
                 index=min(saved_voice_name_index, len(friendly_names) - 1) if friendly_names else 0,
+                key="selected_voice"
             )
-            voice_name = selected_friendly_name
+            # Store in both session state and config
+            voice_name = st.session_state["selected_voice"]
             config.ui["voice_name"] = voice_name
             
         with col2:
             preview_button = st.button("🔊 " + tr("Preview"), use_container_width=True)
             
             # Handle voice preview functionality
-            if preview_button and voice_name:
-                with st.spinner(f"Generating preview for {friendly_names.get(voice_name, voice_name)}..."):
-                    try:
-                        # Define sample text for preview
-                        sample_text = tr("Hello, this is a preview of my voice for the UnQTube2 project.")
-                        
-                        # Create a temporary file for the audio
-                        preview_file = utils.storage_dir("temp", create=True)
-                        preview_file = os.path.join(preview_file, f"voice_preview_{datetime.now().strftime('%Y%m%d%H%M%S')}.mp3")
-                        
-                        # Generate preview audio using the same TTS function used in video generation
-                        sub_maker = voice.tts(
-                            text=sample_text,
-                            voice_name=voice_name,
-                            voice_rate=voice_rate,
-                            voice_file=preview_file,
-                            voice_volume=voice_volume
-                        )
-                        
-                        if os.path.exists(preview_file):
-                            # Display an audio player with the preview
-                            st.audio(preview_file)
-                        else:
-                            st.error(tr("Failed to generate voice preview."))
-                    except Exception as e:
-                        st.error(f"Error generating voice preview: {str(e)}")
+            if preview_button:
+                voice_to_preview = st.session_state.get("selected_voice")
+                if voice_to_preview:
+                    with st.spinner(f"Generating preview for {friendly_names.get(voice_to_preview, voice_to_preview)}..."):
+                        try:
+                            # Define sample text for preview
+                            sample_text = tr("Hello, this is a preview of my voice for the UnQTube2 project.")
+                            
+                            # Create a temporary file for the audio
+                            preview_file = utils.storage_dir("temp", create=True)
+                            preview_file = os.path.join(preview_file, f"voice_preview_{datetime.now().strftime('%Y%m%d%H%M%S')}.mp3")
+                            
+                            # Generate preview audio using the same TTS function used in video generation
+                            sub_maker = voice.tts(
+                                text=sample_text,
+                                voice_name=voice_to_preview,
+                                voice_rate=voice_rate,
+                                voice_file=preview_file,
+                                voice_volume=voice_volume
+                            )
+                            
+                            if os.path.exists(preview_file):
+                                # Display an audio player with the preview
+                                st.audio(preview_file)
+                            else:
+                                st.error(tr("Failed to generate voice preview."))
+                        except Exception as e:
+                            st.error(f"Error generating voice preview: {str(e)}")
+                else:
+                    st.warning(tr("Please select a voice to preview."))
     else:
         # If no voices available, show prompt message
         st.warning(
@@ -489,8 +496,11 @@ with st.sidebar:
         config.ui["voice_name"] = ""
 
     # TTS API settings based on selected service
-    if selected_tts_server == "azure-tts-v2" or (
-        voice_name and voice.is_azure_v2_voice(voice_name)
+    selected_tts_server_from_session = st.session_state.get("selected_tts_server", 0)
+    tts_server_value = tts_servers[selected_tts_server_from_session][0]
+    
+    if tts_server_value == "azure-tts-v2" or (
+        voice_from_session and voice.is_azure_v2_voice(voice_from_session)
     ):
         saved_azure_speech_region = config.azure.get("speech_region", "")
         saved_azure_speech_key = config.azure.get("speech_key", "")
@@ -507,8 +517,8 @@ with st.sidebar:
         config.azure["speech_region"] = azure_speech_region
         config.azure["speech_key"] = azure_speech_key
 
-    if selected_tts_server == "siliconflow" or (
-        voice_name and voice.is_siliconflow_voice(voice_name)
+    if tts_server_value == "siliconflow" or (
+        voice_from_session and voice.is_siliconflow_voice(voice_from_session)
     ):
         saved_siliconflow_api_key = config.siliconflow.get("api_key", "")
         siliconflow_api_key = st.text_input(
@@ -519,8 +529,8 @@ with st.sidebar:
         )
         config.siliconflow["api_key"] = siliconflow_api_key
         
-    if selected_tts_server == "google-gemini" or (
-        voice_name and voice.is_google_gemini_voice(voice_name)
+    if tts_server_value == "google-gemini" or (
+        voice_from_session and voice.is_google_gemini_voice(voice_from_session)
     ):
         # Check if google_gemini config exists, initialize if not
         if not hasattr(config, "google_gemini"):
@@ -904,17 +914,16 @@ if start_button:
         st.stop()
         
     # Validate voice selection - Fix for "Invalid voice" crash
-    if not voice_name and (selected_tts_server.startswith("azure") or selected_tts_server == "siliconflow"):
+    voice_from_session = st.session_state.get("selected_voice", "")
+    
+    if not voice_from_session:
         st.warning(tr("Please select a voice before generating the video."))
         scroll_to_bottom()
         st.stop()
         
-    # Additional check to ensure a voice is selected for any TTS provider
-    if not voice_name:
-        st.warning(tr("Please select a voice before generating the video."))
-        scroll_to_bottom()
-        st.stop()
-
+    # Set the voice name from session state for video generation
+    params.voice_name = voice_from_session
+    
     # Handle uploaded files
     uploaded_files = []  # Define this if it wasn't defined in the settings tab
     if uploaded_files:
