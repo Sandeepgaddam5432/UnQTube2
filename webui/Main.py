@@ -499,6 +499,9 @@ with st.sidebar:
     selected_tts_server_from_session = st.session_state.get("selected_tts_server", 0)
     tts_server_value = tts_servers[selected_tts_server_from_session][0]
     
+    # Define voice_from_session here, before it's used
+    voice_from_session = st.session_state.get("selected_voice", "")
+    
     if tts_server_value == "azure-tts-v2" or (
         voice_from_session and voice.is_azure_v2_voice(voice_from_session)
     ):
@@ -914,7 +917,7 @@ if start_button:
         st.stop()
         
     # Validate voice selection - Fix for "Invalid voice" crash
-    voice_from_session = st.session_state.get("selected_voice", "")
+    # voice_from_session is already defined earlier
     
     if not voice_from_session:
         st.warning(tr("Please select a voice before generating the video."))
