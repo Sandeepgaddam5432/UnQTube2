@@ -6,7 +6,8 @@ import gc
 import shutil
 import subprocess
 import concurrent.futures
-from typing import List, Dict, Tuple
+import json
+from typing import List, Dict, Tuple, Optional, Union
 from pathlib import Path
 from loguru import logger
 from moviepy import (
@@ -35,6 +36,46 @@ from app.models.schema import (
 )
 from app.services.utils import video_effects
 from app.utils import utils
+
+# Add module-level constants for frequently used imports to avoid NameErrors
+# This provides a fallback mechanism if imports somehow get lost during execution
+_IMPORTED_MODULES = {
+    'os': os,
+    'shutil': shutil,
+    'subprocess': subprocess,
+    'gc': gc,
+    'json': json,
+    'random': random,
+    'glob': glob
+}
+
+# Defensive function to ensure a module is available
+def ensure_module(module_name):
+    """Ensure a module is available, return the module or None if not available."""
+    if module_name in _IMPORTED_MODULES:
+        return _IMPORTED_MODULES[module_name]
+    try:
+        if module_name == 'os':
+            import os as module
+        elif module_name == 'shutil':
+            import shutil as module
+        elif module_name == 'subprocess':
+            import subprocess as module
+        elif module_name == 'gc':
+            import gc as module
+        elif module_name == 'json':
+            import json as module
+        elif module_name == 'random':
+            import random as module
+        elif module_name == 'glob':
+            import glob as module
+        else:
+            return None
+        _IMPORTED_MODULES[module_name] = module
+        return module
+    except ImportError:
+        logger.error(f"Failed to import {module_name}")
+        return None
 
 class SubClippedVideoClip:
     def __init__(self, file_path, start_time=None, end_time=None, width=None, height=None, duration=None):
@@ -419,6 +460,12 @@ def generate_video(
         logger.critical(f"Audio file does not exist: {audio_path}")
         return
     
+    # Ensure required modules are available
+    shutil_mod = ensure_module('shutil')
+    if not shutil_mod:
+        logger.error("shutil module not available, cannot continue")
+        return
+    
     # Initialize variables for cleanup
     video_clip = None
     audio_clip = None
@@ -498,17 +545,41 @@ def generate_video(
         # If no subtitles or subtitle rendering disabled, just rename the file and return
         if not subtitle_path or not os.path.exists(subtitle_path) or not params.subtitle_enabled:
             logger.info("No subtitles to add, using video with audio as final output")
-            shutil.move(video_with_audio, output_file)
-            temp_files_to_delete.remove(video_with_audio)  # Removed by move operation
+            try:
+                shutil_mod.move(video_with_audio, output_file)
+                temp_files_to_delete.remove(video_with_audio)  # Removed by move operation
+            except Exception as e:
+                logger.error(f"Failed to move file: {str(e)}")
+                # Try copy as fallback
+                try:
+                    shutil_mod.copy(video_with_audio, output_file)
+                except Exception as copy_error:
+                    logger.critical(f"Failed to copy file: {str(copy_error)}")
             return
         
         # Check for FFmpeg availability before attempting subtitle processing
-        ffmpeg_path = shutil.which('ffmpeg')
-        if not ffmpeg_path:
-            logger.error("FFmpeg not found in PATH. Cannot add subtitles with FFmpeg.")
-            logger.warning("Using intermediate video without subtitles as final output")
-            shutil.move(video_with_audio, output_file)
-            temp_files_to_delete.remove(video_with_audio)  # Removed by move operation
+        try:
+            ffmpeg_path = shutil_mod.which('ffmpeg')
+            if not ffmpeg_path:
+                logger.error("FFmpeg not found in PATH. Cannot add subtitles with FFmpeg.")
+                logger.warning("Using intermediate video without subtitles as final output")
+                try:
+                    shutil_mod.move(video_with_audio, output_file)
+                    temp_files_to_delete.remove(video_with_audio)  # Removed by move operation
+                except Exception as e:
+                    logger.error(f"Failed to move file: {str(e)}")
+                    # Try copy as fallback
+                    try:
+                        shutil_mod.copy(video_with_audio, output_file)
+                    except Exception as copy_error:
+                        logger.critical(f"Failed to copy file: {str(copy_error)}")
+                return
+        except Exception as e:
+            logger.error(f"Error checking for FFmpeg: {str(e)}")
+            try:
+                shutil_mod.copy(video_with_audio, output_file)
+            except Exception as copy_error:
+                logger.critical(f"Failed to copy file: {str(copy_error)}")
             return
         
         logger.info(f"Using FFmpeg at: {ffmpeg_path} for subtitle processing")
@@ -525,8 +596,16 @@ def generate_video(
             font_path = os.path.join(utils.font_dir(), "STHeitiMedium.ttc")
             if not os.path.exists(font_path):
                 logger.error("Default font not found either, using intermediate video without subtitles")
-                shutil.move(video_with_audio, output_file)
-                temp_files_to_delete.remove(video_with_audio)  # Removed by move operation
+                try:
+                    shutil_mod.move(video_with_audio, output_file)
+                    temp_files_to_delete.remove(video_with_audio)  # Removed by move operation
+                except Exception as e:
+                    logger.error(f"Failed to move file: {str(e)}")
+                    # Try copy as fallback
+                    try:
+                        shutil_mod.copy(video_with_audio, output_file)
+                    except Exception as copy_error:
+                        logger.critical(f"Failed to copy file: {str(copy_error)}")
                 return
                 
         if os.name == "nt":
@@ -590,7 +669,10 @@ def generate_video(
         except Exception as e:
             logger.error(f"Failed to add subtitles with FFmpeg: {str(e)}")
             logger.warning("Falling back to intermediate video without subtitles")
-            shutil.copy(video_with_audio, output_file)
+            try:
+                shutil_mod.copy(video_with_audio, output_file)
+            except Exception as copy_error:
+                logger.critical(f"Failed to copy intermediate video: {str(copy_error)}")
     
     except Exception as e:
         logger.critical(f"Critical error generating video: {str(e)}")
@@ -598,7 +680,12 @@ def generate_video(
         if video_with_audio and os.path.exists(video_with_audio) and os.path.getsize(video_with_audio) > 0:
             try:
                 logger.warning("Using intermediate video as fallback output due to error")
-                shutil.copy(video_with_audio, output_file)
+                if shutil_mod:
+                    shutil_mod.copy(video_with_audio, output_file)
+                else:
+                    # Fallback if shutil is not available
+                    with open(video_with_audio, 'rb') as src, open(output_file, 'wb') as dst:
+                        dst.write(src.read())
             except Exception as copy_error:
                 logger.error(f"Failed to copy intermediate video: {str(copy_error)}")
     
@@ -655,6 +742,10 @@ def _preprocess_clip_with_ffmpeg(
     Returns:
         Path to the preprocessed video file
     """
+    # Ensure shutil is available
+    shutil_mod = ensure_module('shutil')
+    json_mod = ensure_module('json')
+    
     try:
         clip_file = f"{output_dir}/ffproc-clip-{clip_idx}.mp4"
         
@@ -672,8 +763,12 @@ def _preprocess_clip_with_ffmpeg(
         # Extract source dimensions, defaults to target if ffprobe fails
         source_width, source_height = target_width, target_height
         try:
-            import json
-            info = json.loads(result.stdout)
+            if json_mod:
+                info = json_mod.loads(result.stdout)
+            else:
+                import json
+                info = json.loads(result.stdout)
+                
             if 'streams' in info and len(info['streams']) > 0:
                 stream = info['streams'][0]
                 source_width = int(stream.get('width', target_width))
@@ -754,6 +849,12 @@ def preprocess_clips_in_parallel(
         logger.error("No video paths provided for preprocessing")
         return []
     
+    # Ensure required modules are available
+    shutil_mod = ensure_module('shutil')
+    if not shutil_mod:
+        logger.error("shutil module not available, cannot continue")
+        return []
+    
     # Filter out non-existent video files
     valid_video_paths = []
     for path in video_paths:
@@ -770,8 +871,12 @@ def preprocess_clips_in_parallel(
     os.makedirs(output_dir, exist_ok=True)
     
     # Check for FFmpeg and FFprobe availability once before starting
-    ffmpeg_path = shutil.which('ffmpeg')
-    ffprobe_path = shutil.which('ffprobe')
+    try:
+        ffmpeg_path = shutil_mod.which('ffmpeg')
+        ffprobe_path = shutil_mod.which('ffprobe')
+    except Exception as e:
+        logger.error(f"Failed to locate FFmpeg/FFprobe: {str(e)}")
+        return []
     
     if not ffmpeg_path:
         logger.error("FFmpeg not found in PATH. Please install FFmpeg to use this feature.")
