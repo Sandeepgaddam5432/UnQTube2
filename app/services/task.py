@@ -173,7 +173,7 @@ def generate_final_videos(
         combined_video_path = path.join(
             utils.task_dir(task_id), f"combined-{index}.mp4"
         )
-        logger.info(f"\n\n## combining video: {index} => {combined_video_path}")
+        logger.info(f"\n\n## combining video with ULTIMATE architecture: {index} => {combined_video_path}")
         
         # Define progress callback function for video combining
         def progress_callback(progress_value):
@@ -181,7 +181,8 @@ def generate_final_videos(
             overall_progress = _progress + (progress_value * 25 / params.video_count)
             sm.state.update_task(task_id, progress=overall_progress)
         
-        video.combine_videos(
+        # Use the new ultra-fast video assembly function
+        video.combine_videos_ultra_fast(
             combined_video_path=combined_video_path,
             video_paths=downloaded_videos,
             audio_file=audio_file,

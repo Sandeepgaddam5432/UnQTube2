@@ -37,6 +37,8 @@ from app.models.schema import (
 )
 from app.services.utils import video_effects
 from app.utils import utils
+from .fast_video_assembler import UltraFastVideoAssembler, VideoGenerationOrchestrator, VideoSegment
+from .breakthrough_optimizer import BreakthroughOptimizer
 
 # Add module-level constants for frequently used imports to avoid NameErrors
 # This provides a fallback mechanism if imports somehow get lost during execution
@@ -729,82 +731,6 @@ def generate_video(
         gc.collect()
 
 
-def preprocess_clips_bulletproof(
-    video_paths: List[str],
-    video_aspect,
-    video_resolution,
-    video_transition_mode,
-    max_clip_duration: int,
-    output_dir: str,
-    max_workers: int = 4,
-) -> List:
-    # === BULLETPROOF INITIALIZATION ===
-    import os as _os, subprocess as _subprocess, shutil as _shutil, json as _json, time as _time
-    from loguru import logger
-    from tqdm import tqdm
-    from app.utils import utils
-    
-    if not video_paths: logger.error("No video paths provided"); return []
-    valid_video_paths = [p for p in video_paths if _os.path.exists(p) and _os.path.getsize(p) > 0]
-    if not valid_video_paths: logger.error("No valid video files found"); return []
-    _os.makedirs(output_dir, exist_ok=True)
-    
-    ffmpeg_path = _shutil.which('ffmpeg')
-    ffprobe_path = _shutil.which('ffprobe')
-    if not ffmpeg_path or not ffprobe_path: logger.error("FFmpeg/FFprobe not found"); return []
-    logger.info(f"Using FFmpeg at: {ffmpeg_path}")
-
-    from app.models.schema import VideoAspect, VideoResolution
-    aspect = VideoAspect(video_aspect)
-    if aspect == VideoAspect.portrait: base_width, base_height = 720, 1280
-    elif aspect == VideoAspect.square: base_width, base_height = 720, 720
-    else: base_width, base_height = 1280, 720
-    resolution_multiplier = VideoResolution(video_resolution).to_multiplier()
-    target_width, target_height = int(base_width * resolution_multiplier), int(base_height * resolution_multiplier)
-    logger.info(f"Target resolution: {target_width}x{target_height}")
-
-    work_items = []
-    clip_idx = 0
-    for video_path in valid_video_paths:
-        try:
-            result = _subprocess.run([ffprobe_path, "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", video_path], capture_output=True, text=True, timeout=10)
-            if result.returncode != 0: continue
-            clip_duration = float(result.stdout.strip())
-            if clip_duration <= 0: continue
-            start_time = 0
-            while start_time < clip_duration:
-                end_time = min(start_time + max_clip_duration, clip_duration)
-                if end_time - start_time >= 1.0:
-                    work_items.append({'clip_idx': clip_idx, 'video_path': video_path, 'start_time': start_time, 'end_time': end_time, 'duration': end_time - start_time})
-                    clip_idx += 1
-                start_time = end_time
-        except Exception as e: logger.error(f"Failed to analyze {video_path}: {e}")
-    
-    if not work_items: logger.error("No valid video segments to process"); return []
-    logger.info(f"Processing {len(work_items)} video segments sequentially")
-
-    processed_clips = []
-    try: hw_encoder = utils.get_gpu_acceleration_params().get("ffmpeg_params", ["-c:v", "libx264"])
-    except: hw_encoder = "libx264"
-    scale_filter = f"scale={target_width}:{target_height}:force_original_aspect_ratio=decrease,pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2:black"
-    
-    from app.services.video import SubClippedVideoClip
-    for i, item in enumerate(tqdm(work_items, desc="Processing clips")):
-        clip_file = f"{output_dir}/clip_{item['clip_idx']:04d}.mp4"
-        ffmpeg_cmd = [ffmpeg_path, "-y", "-ss", f"{item['start_time']:.3f}", "-to", f"{item['end_time']:.3f}", "-i", item['video_path'], "-vf", scale_filter, "-c:v", hw_encoder, "-preset", "ultrafast", "-crf", "28", "-an", "-threads", "1", "-loglevel", "error", clip_file]
-        try:
-            start_time_clip = _time.time()
-            _subprocess.run(ffmpeg_cmd, check=True, capture_output=True, text=True, timeout=30)
-            if _os.path.exists(clip_file) and _os.path.getsize(clip_file) > 0:
-                processed_clips.append(SubClippedVideoClip(file_path=clip_file, duration=item['duration'], width=target_width, height=target_height))
-        except _subprocess.TimeoutExpired: logger.error(f"FFmpeg timeout (30s) for clip {item['clip_idx']}")
-        except _subprocess.CalledProcessError as e: logger.error(f"FFmpeg failed for clip {item['clip_idx']}: {e.stderr}")
-        except Exception as e: logger.error(f"Unexpected error on clip {item['clip_idx']}: {e}")
-    
-    logger.success(f"Sequential preprocessing completed: {len(processed_clips)}/{len(work_items)} clips successful")
-    return processed_clips
-
-
 def preprocess_video(materials: List[MaterialInfo], clip_duration=4):
     for material in materials:
         if not material.url:
@@ -851,3 +777,98 @@ def preprocess_video(materials: List[MaterialInfo], clip_duration=4):
             material.url = video_file
             logger.success(f"image processed: {video_file}")
     return materials
+
+def combine_videos_ultra_fast(
+    combined_video_path: str,
+    video_paths: List[str],
+    audio_file: str,
+    video_aspect: VideoAspect = VideoAspect.portrait,
+    video_concat_mode: VideoConcatMode = VideoConcatMode.random,
+    video_transition_mode: VideoTransitionMode = None,
+    video_resolution: VideoResolution = VideoResolution.hd_720p,
+    max_clip_duration: int = 5,
+    threads: int = 2,
+    progress_callback = None,
+) -> Optional[str]:
+    logger.info("Starting ULTIMATE video assembly with new architecture...")
+    orchestrator = VideoGenerationOrchestrator()
+    
+    # Create output directory if it doesn't exist
+    output_dir = os.path.dirname(combined_video_path)
+    os.makedirs(output_dir, exist_ok=True)
+    
+    if not video_paths:
+        logger.critical("No video paths provided for combining")
+        return None
+        
+    if not os.path.exists(audio_file):
+        logger.critical(f"Audio file does not exist: {audio_file}")
+        return None
+    
+    try:
+        # Load audio file and get duration
+        audio_clip = AudioFileClip(audio_file)
+        audio_duration = audio_clip.duration
+        audio_clip.close()
+        
+        logger.info(f"Audio duration: {audio_duration} seconds")
+        logger.info(f"Maximum clip duration: {max_clip_duration} seconds")
+        
+        # Create VideoSegment objects from the input paths
+        segments = []
+        valid_video_paths = [p for p in video_paths if os.path.exists(p) and os.path.getsize(p) > 0]
+        
+        for video_path in valid_video_paths:
+            try:
+                # Get the duration of each video
+                cmd = [
+                    'ffprobe', '-v', 'error', 
+                    '-show_entries', 'format=duration', 
+                    '-of', 'csv=p=0', 
+                    video_path
+                ]
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                if result.returncode == 0:
+                    clip_duration = float(result.stdout.strip())
+                    # Create segment with appropriate duration
+                    duration = min(clip_duration, max_clip_duration)
+                    segments.append(VideoSegment(
+                        path=video_path,
+                        duration=duration,
+                        start_time=0.0,
+                        end_time=duration
+                    ))
+            except Exception as e:
+                logger.error(f"Error processing video {video_path}: {e}")
+        
+        if not segments:
+            logger.critical("No valid segments could be created")
+            return None
+            
+        # If using random concat mode, shuffle the segments
+        if video_concat_mode.value == VideoConcatMode.random.value:
+            random.shuffle(segments)
+            
+        # Define a progress callback for frontend updates
+        def progress_update(message, progress):
+            logger.info(f"[PROGRESS {progress*100:.1f}%]: {message}")
+            if progress_callback:
+                progress_callback(progress)
+        
+        final_video_path = combined_video_path
+        success = orchestrator.generate_video_with_estimation(
+            segments=segments,
+            output_path=final_video_path,
+            target_duration=audio_duration,  # Use actual audio duration
+            progress_callback=progress_update
+        )
+
+        if success:
+            logger.success("ULTIMATE video assembly completed successfully!")
+            return final_video_path
+        else:
+            logger.error("ULTIMATE video assembly failed.")
+            return None
+    except Exception as e:
+        logger.critical(f"Critical error in ultra-fast assembly: {str(e)}")
+        return None
