@@ -11,6 +11,8 @@ from app.models.schema import VideoConcatMode, VideoParams
 from app.services import llm, material, subtitle, video, voice
 from app.services import state as sm
 from app.utils import utils
+from app.services.bulletproof_assembler import BulletproofVideoAssembler
+from app.services.progress_estimator import ProgressEstimator, StepEstimate
 
 
 def generate_script(task_id, params):
@@ -311,11 +313,65 @@ def start(task_id, params: VideoParams, stop_at: str = "video"):
 
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=50)
 
-    # 6. Generate final videos
-    final_video_paths, combined_video_paths = generate_final_videos(
-        task_id, params, downloaded_videos, audio_file, subtitle_path
-    )
-
+    # 6. Generate final videos using the new bulletproof assembler
+    final_video_paths = []
+    combined_video_paths = []
+    
+    # Initialize the new assembler
+    temp_dir = path.join(utils.task_dir(task_id), "temp")
+    assembler = BulletproofVideoAssembler(temp_dir=temp_dir)
+    
+    # Define progress steps for the estimator
+    steps = [
+        StepEstimate("video_concatenation", 20.0, 0.4),
+        StepEstimate("audio_addition", 15.0, 0.3),
+        StepEstimate("subtitle_addition", 15.0, 0.3)
+    ]
+    
+    for i in range(params.video_count):
+        index = i + 1
+        combined_video_path = path.join(
+            utils.task_dir(task_id), f"combined-{index}.mp4"
+        )
+        logger.info(f"\n\n## combining video with BULLETPROOF architecture: {index} => {combined_video_path}")
+        
+        # Create progress estimator
+        estimator = ProgressEstimator(steps)
+        
+        # Define progress callback function for the estimator
+        def progress_callback(progress_data):
+            # Calculate overall progress (50% to 75% of total task)
+            progress_percentage = progress_data["progress_percentage"]
+            overall_progress = 50 + (progress_percentage * 0.25 / params.video_count)
+            message = f"{progress_data['current_step']} - {progress_data['eta_formatted']} remaining"
+            logger.info(f"Progress: {message} ({progress_percentage:.1f}%)")
+            sm.state.update_task(task_id, progress=int(overall_progress))
+        
+        # Set the callback
+        estimator.set_progress_callback(progress_callback)
+        estimator.start_pipeline()
+        
+        # Start video concatenation
+        estimator.start_step("video_concatenation")
+        # Use the bulletproof assembler for reliable video generation
+        success = assembler.assemble_video_reliable(
+            video_clips=downloaded_videos,
+            audio_path=audio_file,
+            subtitle_path=subtitle_path,
+            output_path=combined_video_path
+        )
+        estimator.complete_step("video_concatenation")
+        
+        if not success:
+            logger.error(f"Failed to generate video {index}")
+            sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
+            return
+            
+        final_video_path = combined_video_path  # In this approach, the combined video is the final video
+        
+        final_video_paths.append(final_video_path)
+        combined_video_paths.append(combined_video_path)
+    
     if not final_video_paths:
         sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
         return
