@@ -6,6 +6,7 @@ from urllib.parse import urlencode
 
 import requests
 from loguru import logger
+from tqdm import tqdm
 from moviepy.video.io.VideoFileClip import VideoFileClip
 
 from app.config import config
@@ -262,25 +263,23 @@ def download_videos(
     
     # Use ThreadPoolExecutor for parallel downloads
     video_paths = []
+    valid_videos_for_download = required_videos
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Create a map of futures to video items for tracking
         future_to_item = {
             executor.submit(save_video, item.url, material_directory): item 
-            for item in required_videos
+            for item in valid_videos_for_download
         }
         
         # Process completed downloads as they finish
-        for future in concurrent.futures.as_completed(future_to_item):
-            item = future_to_item[future]
+        for future in tqdm(concurrent.futures.as_completed(future_to_item), total=len(valid_videos_for_download), desc="Downloading Videos"):
             try:
-                saved_video_path = future.result()
-                if saved_video_path:
-                    logger.info(f"video saved: {saved_video_path}")
-                    video_paths.append(saved_video_path)
-                else:
-                    logger.warning(f"failed to save video: {item.url}")
+                saved_video = future.result()
+                if saved_video:
+                    video_paths.append(saved_video)
             except Exception as e:
-                logger.error(f"failed to download video: {item.url} => {str(e)}")
+                item = future_to_item[future]
+                logger.error(f"Failed to download video from URL {item.url}: {e}")
     
     logger.success(f"downloaded {len(video_paths)} videos")
     return video_paths
