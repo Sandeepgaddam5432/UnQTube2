@@ -748,6 +748,7 @@ def _preprocess_clip_with_ffmpeg(
     import subprocess
     import json
     from loguru import logger
+    from app.utils import utils
     # === END OF FORCED LOCAL IMPORTS (FINAL FIX) ===
     
     try:
