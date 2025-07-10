@@ -712,114 +712,6 @@ def generate_video(
         gc.collect()
 
 
-def _preprocess_clip_with_ffmpeg(
-    clip_idx: int,
-    video_path: str, 
-    start_time: float,
-    end_time: float,
-    output_dir: str,
-    target_width: int, 
-    target_height: int,
-    transition_mode: VideoTransitionMode = None,
-    ffmpeg_path: str = "ffmpeg",
-    ffprobe_path: str = "ffprobe",
-) -> str:
-    """
-    Preprocess a single video clip using direct FFmpeg commands for maximum performance
-    
-    Args:
-        clip_idx: Index of the clip for output filename
-        video_path: Source video file
-        start_time: Start time for the subclip
-        end_time: End time for the subclip
-        output_dir: Directory to write the processed clip to
-        target_width: Target width for resizing
-        target_height: Target height for resizing
-        transition_mode: Video transition mode
-        ffmpeg_path: Path to ffmpeg executable
-        ffprobe_path: Path to ffprobe executable
-    
-    Returns:
-        Path to the preprocessed video file
-    """
-    # === START OF FORCED LOCAL IMPORTS (ULTIMATE FIX) ===
-    import shutil
-    import os
-    import subprocess
-    import json
-    from loguru import logger
-    from app.utils import utils
-    # === END OF FORCED LOCAL IMPORTS (ULTIMATE FIX) ===
-    
-    try:
-        clip_file = f"{output_dir}/ffproc-clip-{clip_idx}.mp4"
-        
-        # Get source video info using FFprobe
-        probe_cmd = [
-            ffprobe_path,
-            "-v", "error",
-            "-select_streams", "v:0",
-            "-show_entries", "stream=width,height",
-            "-of", "json",
-            video_path
-        ]
-        result = subprocess.run(probe_cmd, capture_output=True, text=True)
-        
-        # Extract source dimensions, defaults to target if ffprobe fails
-        source_width, source_height = target_width, target_height
-        try:
-            info = json.loads(result.stdout)
-            if 'streams' in info and len(info['streams']) > 0:
-                stream = info['streams'][0]
-                source_width = int(stream.get('width', target_width))
-                source_height = int(stream.get('height', target_height))
-        except Exception as e:
-            logger.warning(f"Failed to get video dimensions, using defaults: {str(e)}")
-        
-        # Calculate the proper padding for letterboxing/pillarboxing
-        source_ratio = source_width / source_height
-        target_ratio = target_width / target_height
-        
-        # Apply FFmpeg filters for scaling and padding
-        if abs(source_ratio - target_ratio) < 0.01:
-            # Same aspect ratio, just scale
-            scale_filter = f"scale={target_width}:{target_height}"
-        else:
-            # Different aspect ratio, scale and pad
-            scale_filter = f"scale='if(gt(dar,{target_width}/{target_height}),min({target_width},iw),-1):if(gt(dar,{target_width}/{target_height}),-1,min({target_height},ih))',pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2:black"
-
-        # Hardware acceleration parameters
-        gpu_params = utils.get_gpu_acceleration_params()
-        hw_encoder = gpu_params.get("ffmpeg_params", ["-c:v", "libx264"])
-        
-        # Base command for video extraction and processing
-        ffmpeg_cmd = [
-            ffmpeg_path, "-y",  # Overwrite output file if it exists
-            "-ss", f"{start_time:.3f}",  # Start time
-            "-i", video_path,  # Input file
-            "-t", f"{end_time - start_time:.3f}",  # Duration
-            "-vf", scale_filter,  # Video filters
-            "-c:v", hw_encoder[1],  # Video codec (from hw_encoder)
-            "-preset", "ultrafast",  # For maximum speed
-            "-tune", "zerolatency",
-            "-pix_fmt", "yuv420p",  # Ensure compatibility
-            "-an",  # No audio
-            clip_file
-        ]
-        
-        # Run FFmpeg
-        logger.info(f"Processing clip {clip_idx} with FFmpeg: {os.path.basename(video_path)} ({start_time:.2f}s-{end_time:.2f}s)")
-        subprocess.run(ffmpeg_cmd, check=True)
-        
-        # Verify output file exists and has valid size
-        if os.path.exists(clip_file) and os.path.getsize(clip_file) > 0:
-            return clip_file
-            
-    except Exception as e:
-        logger.error(f"FFmpeg preprocessing failed for clip {clip_idx}: {str(e)}")
-    
-    return ""
-
 def preprocess_clips_in_parallel(
     video_paths: List[str],
     video_aspect: VideoAspect,
@@ -829,197 +721,133 @@ def preprocess_clips_in_parallel(
     output_dir: str,
     max_workers: int = 4,
 ) -> List[SubClippedVideoClip]:
-    """
-    Preprocess videos using FFmpeg in parallel for much faster processing
+    # === START OF CLAUDE'S FORCED LOCAL IMPORTS (ULTIMATE FIX) ===
+    import shutil
+    import os
+    import subprocess
+    import json
+    import concurrent.futures
+    from loguru import logger
+    from app.utils import utils
+    # === END OF CLAUDE'S FORCED LOCAL IMPORTS (ULTIMATE FIX) ===
     
-    Args:
-        video_paths: Paths to source video files
-        video_aspect: Target aspect ratio
-        video_resolution: Target resolution
-        video_transition_mode: Video transition mode
-        max_clip_duration: Maximum duration for each clip
-        output_dir: Directory to save processed clips
-        max_workers: Number of parallel workers
-        
-    Returns:
-        List of SubClippedVideoClip objects with paths to preprocessed videos
-    """
-    # Validate input
     if not video_paths:
         logger.error("No video paths provided for preprocessing")
         return []
     
-    # Ensure required modules are available
-    shutil_mod = ensure_module('shutil')
-    if not shutil_mod:
-        logger.error("shutil module not available, cannot continue")
-        return []
-    
-    # Filter out non-existent video files
-    valid_video_paths = []
-    for path in video_paths:
-        if os.path.exists(path) and os.path.getsize(path) > 0:
-            valid_video_paths.append(path)
-        else:
-            logger.warning(f"Skipping non-existent or empty video file: {path}")
-    
+    valid_video_paths = [p for p in video_paths if os.path.exists(p) and os.path.getsize(p) > 0]
     if not valid_video_paths:
         logger.error("No valid video files found for preprocessing")
         return []
     
-    # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
     
-    # Check for FFmpeg and FFprobe availability once before starting
-    try:
-        ffmpeg_path = shutil_mod.which('ffmpeg')
-        ffprobe_path = shutil_mod.which('ffprobe')
-    except Exception as e:
-        logger.error(f"Failed to locate FFmpeg/FFprobe: {str(e)}")
-        return []
+    ffmpeg_path = shutil.which('ffmpeg')
+    ffprobe_path = shutil.which('ffprobe')
     
-    if not ffmpeg_path:
-        logger.error("FFmpeg not found in PATH. Please install FFmpeg to use this feature.")
-        return []
-        
-    if not ffprobe_path:
-        logger.error("FFprobe not found in PATH. Please install FFmpeg to use this feature.")
+    if not ffmpeg_path or not ffprobe_path:
+        logger.error("FFmpeg/FFprobe not found. Please install FFmpeg.")
         return []
     
     logger.info(f"Using FFmpeg at: {ffmpeg_path}")
     logger.info(f"Using FFprobe at: {ffprobe_path}")
-    
-    # Calculate target resolution
+
     aspect = VideoAspect(video_aspect)
-    if aspect == VideoAspect.portrait:  # 9:16
-        base_width, base_height = 720, 1280
-    elif aspect == VideoAspect.square:  # 1:1
-        base_width, base_height = 720, 720
-    else:  # 16:9
-        base_width, base_height = 1280, 720
+    if aspect == VideoAspect.portrait: base_width, base_height = 720, 1280
+    elif aspect == VideoAspect.square: base_width, base_height = 720, 720
+    else: base_width, base_height = 1280, 720
     
-    # Apply resolution multiplier
     resolution_multiplier = VideoResolution(video_resolution).to_multiplier()
     target_width = int(base_width * resolution_multiplier)
     target_height = int(base_height * resolution_multiplier)
     
     logger.info(f"Preprocessing {len(valid_video_paths)} videos with FFmpeg at {target_width}x{target_height}")
     
-    # Prepare work items for parallel processing
     work_items = []
     clip_idx = 0
-    temp_files_created = []
+    
+    for video_path in valid_video_paths:
+        try:
+            result = subprocess.run([ffprobe_path, "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", video_path], capture_output=True, text=True)
+            clip_duration = float(result.stdout.strip())
+            
+            if clip_duration <= 0: continue
+            
+            start_time = 0
+            while start_time < clip_duration:
+                end_time = min(start_time + max_clip_duration, clip_duration)
+                if end_time - start_time >= 1.0:
+                    work_items.append({
+                        'clip_idx': clip_idx, 'video_path': video_path, 'start_time': start_time, 'end_time': end_time,
+                        'output_dir': output_dir, 'target_width': target_width, 'target_height': target_height,
+                        'transition_mode': video_transition_mode, 'ffmpeg_path': ffmpeg_path, 'ffprobe_path': ffprobe_path
+                    })
+                    clip_idx += 1
+                start_time = end_time
+        except Exception as e:
+            logger.error(f"Failed to process {video_path}: {e}")
+
+    if not work_items:
+        logger.error("No valid video segments to process.")
+        return []
+
+    logger.info(f"Starting parallel preprocessing of {len(work_items)} segments with {max_workers} workers")
+    processed_clips = []
+    actual_max_workers = min(max_workers, len(work_items))
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=actual_max_workers) as executor:
+        future_to_item = {executor.submit(_preprocess_clip_with_ffmpeg, **item): item for item in work_items}
+        for future in concurrent.futures.as_completed(future_to_item):
+            try:
+                processed_clip_path = future.result()
+                if processed_clip_path:
+                    item = future_to_item[future]
+                    duration = item['end_time'] - item['start_time']
+                    processed_clips.append(SubClippedVideoClip(file_path=processed_clip_path, duration=duration, width=item['target_width'], height=item['target_height']))
+            except Exception as e:
+                logger.error(f"A clip processing task failed: {e}")
+
+    logger.success(f"Completed preprocessing {len(processed_clips)}/{len(work_items)} clips")
+    return processed_clips
+
+def _preprocess_clip_with_ffmpeg(
+    clip_idx: int, video_path: str, start_time: float, end_time: float, output_dir: str,
+    target_width: int, target_height: int, transition_mode: VideoTransitionMode,
+    ffmpeg_path: str, ffprobe_path: str
+) -> str:
+    # === START OF CLAUDE'S FORCED LOCAL IMPORTS (ULTIMATE FIX) ===
+    import shutil
+    import os
+    import subprocess
+    import json
+    from loguru import logger
+    from app.utils import utils
+    # === END OF CLAUDE'S FORCED LOCAL IMPORTS (ULTIMATE FIX) ===
     
     try:
-        for video_path in valid_video_paths:
-            try:
-                # Get video duration using FFprobe
-                ffprobe_cmd = [
-                    ffprobe_path, 
-                    "-v", "error", 
-                    "-show_entries", "format=duration", 
-                    "-of", "default=noprint_wrappers=1:nokey=1", 
-                    video_path
-                ]
-                result = subprocess.run(ffprobe_cmd, capture_output=True, text=True)
-                
-                if not result.stdout.strip():
-                    logger.warning(f"Failed to get duration for {video_path}: Empty FFprobe result")
-                    continue
-                    
-                clip_duration = float(result.stdout.strip())
-                
-                if clip_duration <= 0:
-                    logger.warning(f"Skipping video with invalid duration ({clip_duration}s): {video_path}")
-                    continue
-                
-                start_time = 0
-                while start_time < clip_duration:
-                    end_time = min(start_time + max_clip_duration, clip_duration)
-                    if end_time - start_time >= 1.0:  # Only include clips of at least 1 second
-                        work_items.append({
-                            'clip_idx': clip_idx,
-                            'video_path': video_path,
-                            'start_time': start_time,
-                            'end_time': end_time,
-                            'output_dir': output_dir,
-                            'target_width': target_width,
-                            'target_height': target_height,
-                            'transition_mode': video_transition_mode,
-                            'ffmpeg_path': ffmpeg_path,
-                            'ffprobe_path': ffprobe_path
-                        })
-                        clip_idx += 1
-                    start_time = end_time
-            except Exception as e:
-                logger.error(f"Failed to get duration for {video_path}: {str(e)}")
+        clip_file = f"{output_dir}/ffproc-clip-{clip_idx}.mp4"
         
-        if not work_items:
-            logger.error("No valid video segments found for preprocessing")
-            return []
+        # Using direct values, no need for ffprobe here as it's done in the calling function
+        scale_filter = f"scale={target_width}:{target_height}:force_original_aspect_ratio=decrease,pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2:black"
         
-        # Process clips in parallel
-        logger.info(f"Starting parallel preprocessing of {len(work_items)} video segments with {max_workers} workers")
-        processed_clips = []
+        gpu_params = utils.get_gpu_acceleration_params()
+        hw_encoder = gpu_params.get("ffmpeg_params", ["-c:v", "libx264"])
         
-        # Adjust max_workers if we have fewer work items
-        actual_max_workers = min(max_workers, len(work_items))
+        ffmpeg_cmd = [
+            ffmpeg_path, "-y", "-ss", f"{start_time:.3f}", "-i", video_path,
+            "-t", f"{end_time - start_time:.3f}", "-vf", scale_filter,
+            "-c:v", hw_encoder, "-preset", "ultrafast", "-an", clip_file
+        ]
         
-        with concurrent.futures.ThreadPoolExecutor(max_workers=actual_max_workers) as executor:
-            # Submit all preprocessing tasks
-            future_to_item = {
-                executor.submit(
-                    _preprocess_clip_with_ffmpeg,
-                    item['clip_idx'],
-                    item['video_path'], 
-                    item['start_time'], 
-                    item['end_time'],
-                    item['output_dir'], 
-                    item['target_width'], 
-                    item['target_height'],
-                    item['transition_mode'],
-                    item['ffmpeg_path'],
-                    item['ffprobe_path']
-                ): item for item in work_items
-            }
-            
-            # Process results as they complete
-            for future in concurrent.futures.as_completed(future_to_item):
-                item = future_to_item[future]
-                try:
-                    processed_clip_path = future.result()
-                    if processed_clip_path and os.path.exists(processed_clip_path) and os.path.getsize(processed_clip_path) > 0:
-                        duration = item['end_time'] - item['start_time']
-                        clip_obj = SubClippedVideoClip(
-                            file_path=processed_clip_path, 
-                            duration=duration,
-                            width=item['target_width'], 
-                            height=item['target_height']
-                        )
-                        processed_clips.append(clip_obj)
-                        temp_files_created.append(processed_clip_path)
-                        logger.info(f"Successfully preprocessed clip {item['clip_idx']}")
-                    else:
-                        logger.warning(f"Failed to preprocess clip {item['clip_idx']}")
-                except Exception as e:
-                    logger.error(f"Error processing future for clip {item['clip_idx']}: {str(e)}")
+        subprocess.run(ffmpeg_cmd, check=True, capture_output=True)
         
-        if not processed_clips:
-            logger.error("All preprocessing tasks failed, no clips were generated")
-            return []
-            
-        logger.success(f"Completed preprocessing {len(processed_clips)}/{len(work_items)} clips")
-        return processed_clips
-    
+        if os.path.exists(clip_file) and os.path.getsize(clip_file) > 0:
+            return clip_file
     except Exception as e:
-        logger.critical(f"Critical error during parallel preprocessing: {str(e)}")
-        
-        # Clean up any temporary files that were created before the error
-        if temp_files_created:
-            logger.warning(f"Cleaning up {len(temp_files_created)} temporary files due to error")
-            delete_files(temp_files_created)
-            
-        return []
+        logger.error(f"FFmpeg failed for clip {clip_idx}: {e}")
+        if isinstance(e, subprocess.CalledProcessError):
+            logger.error(f"FFmpeg stderr for clip {clip_idx}: {e.stderr.decode()}")
+    return ""
 
 
 def preprocess_video(materials: List[MaterialInfo], clip_duration=4):
