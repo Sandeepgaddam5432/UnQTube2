@@ -221,8 +221,14 @@ def combine_videos(
         logger.info(f"Audio duration: {audio_duration} seconds")
         logger.info(f"Maximum clip duration: {max_clip_duration} seconds")
         
-        # Determine optimal number of workers based on CPU count
-        max_workers = min(os.cpu_count() or 4, 8)  # Limit to 8 workers max
+        # === START OF HYPER-SPEED WORKER OPTIMIZATION ===
+        # Dynamically calculate the optimal number of workers based on CPU cores.
+        # We use a multiplier because video processing can be I/O-heavy,
+        # so more threads can keep the CPU saturated.
+        cpu_cores = os.cpu_count() or 2  # Default to 2 cores if undetectable
+        optimal_workers = cpu_cores * 2
+        logger.info(f"Dynamically setting max_workers for preprocessing to {optimal_workers} based on {cpu_cores} CPU cores.")
+        # === END OF HYPER-SPEED WORKER OPTIMIZATION ===
         
         # Step 1: Preprocess all video clips in parallel using FFmpeg
         logger.info("Starting parallel clip preprocessing with FFmpeg")
@@ -236,7 +242,7 @@ def combine_videos(
             video_transition_mode=video_transition_mode,
             max_clip_duration=max_clip_duration,
             output_dir=output_dir,
-            max_workers=max_workers
+            max_workers=optimal_workers
         )
         
         if not preprocessed_clips:
