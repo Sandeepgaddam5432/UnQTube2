@@ -742,13 +742,13 @@ def _preprocess_clip_with_ffmpeg(
     Returns:
         Path to the preprocessed video file
     """
-    # The definitive fix starts here - local imports for thread safety
+    # === START OF FORCED LOCAL IMPORTS (FINAL FIX) ===
     import shutil
     import os
     import subprocess
     import json
     from loguru import logger
-    from app.utils import utils
+    # === END OF FORCED LOCAL IMPORTS (FINAL FIX) ===
     
     try:
         clip_file = f"{output_dir}/ffproc-clip-{clip_idx}.mp4"
