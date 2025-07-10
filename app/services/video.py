@@ -742,9 +742,13 @@ def _preprocess_clip_with_ffmpeg(
     Returns:
         Path to the preprocessed video file
     """
-    # Ensure shutil is available
-    shutil_mod = ensure_module('shutil')
-    json_mod = ensure_module('json')
+    # The definitive fix starts here - local imports for thread safety
+    import shutil
+    import os
+    import subprocess
+    import json
+    from loguru import logger
+    from app.utils import utils
     
     try:
         clip_file = f"{output_dir}/ffproc-clip-{clip_idx}.mp4"
@@ -763,12 +767,7 @@ def _preprocess_clip_with_ffmpeg(
         # Extract source dimensions, defaults to target if ffprobe fails
         source_width, source_height = target_width, target_height
         try:
-            if json_mod:
-                info = json_mod.loads(result.stdout)
-            else:
-                import json
-                info = json.loads(result.stdout)
-                
+            info = json.loads(result.stdout)
             if 'streams' in info and len(info['streams']) > 0:
                 stream = info['streams'][0]
                 source_width = int(stream.get('width', target_width))
