@@ -10,6 +10,7 @@ import json
 from typing import List, Dict, Tuple, Optional, Union
 from pathlib import Path
 from loguru import logger
+from tqdm import tqdm
 from moviepy import (
     AudioFileClip,
     ColorClip,
@@ -803,7 +804,7 @@ def preprocess_clips_in_parallel(
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=actual_max_workers) as executor:
         future_to_item = {executor.submit(_preprocess_clip_with_ffmpeg, **item): item for item in work_items}
-        for future in concurrent.futures.as_completed(future_to_item):
+        for future in tqdm(concurrent.futures.as_completed(future_to_item), total=len(work_items), desc="Preprocessing clips"):
             try:
                 processed_clip_path = future.result()
                 if processed_clip_path:
@@ -839,10 +840,19 @@ def _preprocess_clip_with_ffmpeg(
         gpu_params = utils.get_gpu_acceleration_params()
         hw_encoder = gpu_params.get("ffmpeg_params", ["-c:v", "libx264"])
         
+        # Optimized FFmpeg command for speed and non-interactive execution
         ffmpeg_cmd = [
-            ffmpeg_path, "-y", "-ss", f"{start_time:.3f}", "-i", video_path,
-            "-t", f"{end_time - start_time:.3f}", "-vf", scale_filter,
-            "-c:v", hw_encoder, "-preset", "ultrafast", "-an", clip_file
+            ffmpeg_path,
+            "-y",  # Overwrite output files without asking
+            "-ss", f"{start_time:.3f}",  # More accurate start time
+            "-to", f"{end_time:.3f}",   # More accurate end time (often faster than -t)
+            "-i", video_path,          # Input file placed after time flags for faster seeking
+            "-vf", scale_filter,       # The video filter chain
+            "-c:v", hw_encoder,        # The hardware-accelerated video codec
+            "-preset", "ultrafast",    # The fastest possible encoding preset
+            "-an",                     # No audio in these clips
+            "-loglevel", "error",      # Be silent unless a fatal error occurs (reduces spam, improves performance)
+            clip_file
         ]
         
         subprocess.run(ffmpeg_cmd, check=True, capture_output=True)
