@@ -50,6 +50,16 @@ _IMPORTED_MODULES = {
     'glob': glob
 }
 
+# Helper function for resource monitoring
+def _log_system_resources(stage=""):
+    try:
+        import psutil
+        memory = psutil.virtual_memory()
+        cpu = psutil.cpu_percent(interval=None)
+        logger.info(f"Resource Check [{stage}]: Memory: {memory.percent:.2f}%, CPU: {cpu:.2f}%")
+    except ImportError:
+        pass # psutil might not be installed, and that's okay
+
 # Defensive function to ensure a module is available
 def ensure_module(module_name):
     """Ensure a module is available, return the module or None if not available."""
@@ -728,15 +738,11 @@ def preprocess_clips_in_parallel(
     output_dir: str,
     max_workers: int = 4,
 ) -> List[SubClippedVideoClip]:
-    # === START OF CLAUDE'S FORCED LOCAL IMPORTS (ULTIMATE FIX) ===
-    import shutil
-    import os
-    import subprocess
-    import json
-    import concurrent.futures
+    # === START OF SEQUENTIAL PROCESSING RE-ARCHITECTURE ===
+    import shutil, os, subprocess, json, time
     from loguru import logger
     from app.utils import utils
-    # === END OF CLAUDE'S FORCED LOCAL IMPORTS (ULTIMATE FIX) ===
+    from tqdm import tqdm
     
     if not video_paths:
         logger.error("No video paths provided for preprocessing")
@@ -798,24 +804,42 @@ def preprocess_clips_in_parallel(
         logger.error("No valid video segments to process.")
         return []
 
-    logger.info(f"Starting parallel preprocessing of {len(work_items)} segments with {max_workers} workers")
-    processed_clips = []
-    actual_max_workers = min(max_workers, len(work_items))
-    
-    with concurrent.futures.ThreadPoolExecutor(max_workers=actual_max_workers) as executor:
-        future_to_item = {executor.submit(_preprocess_clip_with_ffmpeg, **item): item for item in work_items}
-        for future in tqdm(concurrent.futures.as_completed(future_to_item), total=len(work_items), desc="Preprocessing clips"):
-            try:
-                processed_clip_path = future.result()
-                if processed_clip_path:
-                    item = future_to_item[future]
-                    duration = item['end_time'] - item['start_time']
-                    processed_clips.append(SubClippedVideoClip(file_path=processed_clip_path, duration=duration, width=item['target_width'], height=item['target_height']))
-            except Exception as e:
-                logger.error(f"A clip processing task failed: {e}")
+    logger.info(f"Starting SEQUENTIAL preprocessing of {len(work_items)} video segments.")
+    _log_system_resources("Start of Sequential Preprocessing")
 
-    logger.success(f"Completed preprocessing {len(processed_clips)}/{len(work_items)} clips")
+    processed_clips = []
+    # Use tqdm for a visible progress bar over the sequential loop
+    for item in tqdm(work_items, desc="Sequentially Preprocessing Clips"):
+        try:
+            # Call the worker function directly
+            processed_clip_path = _preprocess_clip_with_ffmpeg(
+                clip_idx=item['clip_idx'],
+                video_path=item['video_path'],
+                start_time=item['start_time'],
+                end_time=item['end_time'],
+                output_dir=item['output_dir'],
+                target_width=item['target_width'],
+                target_height=item['target_height'],
+                transition_mode=item['transition_mode'],
+                ffmpeg_path=item['ffmpeg_path'],
+                ffprobe_path=item['ffprobe_path']
+            )
+
+            if processed_clip_path:
+                duration = item['end_time'] - item['start_time']
+                processed_clips.append(SubClippedVideoClip(file_path=processed_clip_path, duration=duration, width=item['target_width'], height=item['target_height']))
+
+            # Log resources periodically
+            if item['clip_idx'] % 10 == 0:
+                _log_system_resources(f"After clip {item['clip_idx']}")
+
+        except Exception as e:
+            logger.error(f"Failed to process clip {item['clip_idx']}: {e}")
+
+    _log_system_resources("End of Sequential Preprocessing")
+    logger.success(f"Completed sequential preprocessing of {len(processed_clips)}/{len(work_items)} clips")
     return processed_clips
+    # === END OF SEQUENTIAL PROCESSING RE-ARCHITECTURE ===
 
 def _preprocess_clip_with_ffmpeg(
     clip_idx: int, video_path: str, start_time: float, end_time: float, output_dir: str,
@@ -855,14 +879,19 @@ def _preprocess_clip_with_ffmpeg(
             clip_file
         ]
         
-        subprocess.run(ffmpeg_cmd, check=True, capture_output=True)
+        try:
+            # Add a 60-second timeout to prevent hanging
+            result = subprocess.run(ffmpeg_cmd, check=True, capture_output=True, text=True, timeout=60)
+        except subprocess.TimeoutExpired:
+            logger.error(f"FFmpeg timed out after 60 seconds for clip {clip_idx}. This may indicate resource exhaustion.")
+            return ""
         
         if os.path.exists(clip_file) and os.path.getsize(clip_file) > 0:
             return clip_file
     except Exception as e:
         logger.error(f"FFmpeg failed for clip {clip_idx}: {e}")
         if isinstance(e, subprocess.CalledProcessError):
-            logger.error(f"FFmpeg stderr for clip {clip_idx}: {e.stderr.decode()}")
+            logger.error(f"FFmpeg stderr for clip {clip_idx}: {e.stderr}")
     return ""
 
 
