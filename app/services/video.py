@@ -846,15 +846,7 @@ def _preprocess_clip_with_ffmpeg(
     target_width: int, target_height: int, transition_mode: VideoTransitionMode,
     ffmpeg_path: str, ffprobe_path: str
 ) -> str:
-    # === START OF CLAUDE'S FORCED LOCAL IMPORTS (ULTIMATE FIX) ===
-    import shutil
-    import os
-    import subprocess
-    import json
-    from loguru import logger
-    from app.utils import utils
-    # === END OF CLAUDE'S FORCED LOCAL IMPORTS (ULTIMATE FIX) ===
-    
+    # Don't use local imports as they're causing issues with sequential processing
     try:
         clip_file = f"{output_dir}/ffproc-clip-{clip_idx}.mp4"
         
