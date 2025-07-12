@@ -606,9 +606,17 @@ def generate_video(
         # Process subtitles with FFmpeg for much better performance
         logger.info("Adding subtitles using FFmpeg for optimal performance")
         
-        # Prepare font path
-        if not params.font_name:
-            params.font_name = "STHeitiMedium.ttc"
+        # Prepare font path - Use appropriate font based on language
+        if not params.font_name or params.font_name == "STHeitiMedium.ttc":
+            # If the font isn't explicitly set or is using the default Chinese font,
+            # automatically select an appropriate font for the language
+            if params.video_language:
+                # Use our utility function to get the appropriate font for this language
+                params.font_name = utils.get_font_for_language(params.video_language, "STHeitiMedium.ttc")
+                logger.info(f"Auto-selected font for {params.video_language}: {params.font_name}")
+            else:
+                params.font_name = "STHeitiMedium.ttc"
+                
         font_path = os.path.join(utils.font_dir(), params.font_name)
         if not os.path.exists(font_path):
             logger.warning(f"Font file not found: {font_path}, falling back to default")

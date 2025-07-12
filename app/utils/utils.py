@@ -122,6 +122,32 @@ def public_dir(sub_dir: str = ""):
     return d
 
 
+def get_font_for_language(language_code: str, default_font: str = "STHeitiMedium.ttc") -> str:
+    """
+    Maps a language code to the appropriate font file.
+    
+    Args:
+        language_code: The language code (e.g., 'hi-IN', 'te-IN')
+        default_font: The default font to use if no specific font is found
+        
+    Returns:
+        The name of the font file to use for the given language
+    """
+    language_font_map = {
+        "hi-IN": "NotoSansDevanagari-Regular.ttf",  # Hindi
+        "te-IN": "NotoSansTelugu-Regular.ttf",      # Telugu
+        "ta-IN": "NotoSansTamil-Regular.ttf",       # Tamil
+        "kn-IN": "NotoSansKannada-Regular.ttf",     # Kannada
+        "bn-IN": "NotoSansBengali-Regular.ttf",     # Bengali
+        "mr-IN": "NotoSansDevanagari-Regular.ttf",  # Marathi (uses Devanagari script)
+        "gu-IN": "NotoSansGujarati-Regular.ttf",    # Gujarati
+        "ml-IN": "NotoSansMalayalam-Regular.ttf",   # Malayalam
+        "pa-IN": "NotoSansGurmukhi-Regular.ttf",    # Punjabi
+    }
+    
+    return language_font_map.get(language_code, default_font)
+
+
 def run_in_background(func, *args, **kwargs):
     def run():
         try:
