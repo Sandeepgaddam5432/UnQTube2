@@ -3,6 +3,7 @@ import platform
 import sys
 from uuid import uuid4
 from datetime import datetime
+import json
 
 import streamlit as st
 from loguru import logger
@@ -385,16 +386,40 @@ with st.sidebar:
         # Get Azure voice list
         all_voices = voice.get_all_azure_voices(filter_locals=None)
 
-        # Filter voices based on selected TTS server
+        # Load the mapping of Indian language codes to available voices
+        indian_voices_map = {}
+        try:
+            with open('temp_voices.json', 'r') as f:
+                indian_voices_map = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            # If file doesn't exist or has invalid JSON, use an empty map
+            indian_voices_map = {}
+
+        # Get the currently selected language from the script tab
+        selected_language = params.video_language if 'params' in locals() else ""
+        
+        # Filter voices based on selected TTS server and language
         for v in all_voices:
+            # First filter by TTS server version
+            server_match = False
             if selected_tts_server == "azure-tts-v2":
-                # V2 version voice name contains "v2"
-                if "V2" in v:
-                    filtered_voices.append(v)
-            else:
-                # V1 version voice name does not contain "v2"
-                if "V2" not in v:
-                    filtered_voices.append(v)
+                server_match = "V2" in v
+            else:  # "azure-tts-v1"
+                server_match = "V2" not in v
+                
+            # Then filter by language if an Indian language is selected
+            language_match = True
+            if selected_language and selected_language in indian_voices_map:
+                # If it's an Indian language, only show voices for that language
+                language_match = False
+                for voice_name in indian_voices_map[selected_language]:
+                    if voice_name.split('-')[0] in v:  # Check if the voice name matches
+                        language_match = True
+                        break
+            
+            # Add voice to filtered list if both filters pass
+            if server_match and language_match:
+                filtered_voices.append(v)
 
     friendly_names = {
         v: v.replace("Female", tr("Female"))
@@ -620,6 +645,8 @@ with tabs[0]:
     # Script language selection
     support_locales = [
         "zh-CN", "zh-HK", "zh-TW", "de-DE", "en-US", "fr-FR", "vi-VN", "th-TH",
+        # Added Indian languages
+        "hi-IN", "te-IN", "ta-IN", "kn-IN", "bn-IN", "mr-IN", "gu-IN", "ml-IN", "pa-IN",
     ]
     
     col1, col2 = st.columns([1, 3])
@@ -628,8 +655,23 @@ with tabs[0]:
         video_languages = [
             (tr("Auto Detect"), ""),
         ]
+        # Add language display names for Indian languages
+        language_display_names = {
+            "hi-IN": "Hindi (हिन्दी)",
+            "te-IN": "Telugu (తెలుగు)",
+            "ta-IN": "Tamil (தமிழ்)",
+            "kn-IN": "Kannada (ಕನ್ನಡ)",
+            "bn-IN": "Bengali (বাংলা)",
+            "mr-IN": "Marathi (मराठी)",
+            "gu-IN": "Gujarati (ગુજરાતી)",
+            "ml-IN": "Malayalam (മലയാളം)",
+            "pa-IN": "Punjabi (ਪੰਜਾਬੀ)"
+        }
+        
         for code in support_locales:
-            video_languages.append((code, code))
+            # Use display name if available, otherwise use the code
+            display_name = language_display_names.get(code, code)
+            video_languages.append((display_name, code))
 
         selected_index = st.selectbox(
             tr("Script Language"),
@@ -848,15 +890,59 @@ with tabs[1]:
         if params.subtitle_enabled:
             # Basic subtitle settings
             font_names = get_all_fonts()
+            
+            # Map language codes to recommended fonts
+            language_font_recommendations = {
+                "hi-IN": "NotoSansDevanagari-Regular.ttf",  # Hindi
+                "te-IN": "NotoSansTelugu-Regular.ttf",      # Telugu
+                "ta-IN": "NotoSansTamil-Regular.ttf",       # Tamil
+                "kn-IN": "NotoSansKannada-Regular.ttf",     # Kannada
+                "bn-IN": "NotoSansBengali-Regular.ttf",     # Bengali
+                "mr-IN": "NotoSansDevanagari-Regular.ttf",  # Marathi
+                "gu-IN": "NotoSansGujarati-Regular.ttf",    # Gujarati
+                "ml-IN": "NotoSansMalayalam-Regular.ttf",   # Malayalam
+                "pa-IN": "NotoSansGurmukhi-Regular.ttf",    # Punjabi
+            }
+            
+            # Get current language selected
+            current_language = params.video_language
+            
+            # Determine the recommended font based on language
+            recommended_font = None
+            if current_language in language_font_recommendations:
+                recommended_font = language_font_recommendations[current_language]
+            
+            # Get the saved font name from config or use the recommended font for the selected language
             saved_font_name = config.ui.get("font_name", "MicrosoftYaHeiBold.ttc")
+            
+            # If we have a recommended font for this language and it's in our font list, use it
+            if recommended_font and recommended_font in font_names:
+                saved_font_name = recommended_font
+                
             saved_font_name_index = 0
             if saved_font_name in font_names:
                 saved_font_name_index = font_names.index(saved_font_name)
+                
+            # Create font options with recommendations for Indian languages
+            font_options = font_names.copy()
+            font_format_func = lambda x: x
+            
+            # If we have an Indian language selected, modify the display function to mark recommended fonts
+            if current_language in language_font_recommendations:
+                font_format_func = lambda x: f"{x} ✓ (Recommended)" if x == language_font_recommendations[current_language] else x
+            
             params.font_name = st.selectbox(
-                tr("Font"), font_names, index=saved_font_name_index
+                tr("Font"),
+                options=font_options,
+                index=saved_font_name_index,
+                format_func=font_format_func
             )
             config.ui["font_name"] = params.font_name
             
+            # If an Indian language is selected but not using the recommended font, show a hint
+            if current_language in language_font_recommendations and params.font_name != language_font_recommendations[current_language]:
+                st.info(f"Tip: For {current_language}, we recommend using {language_font_recommendations[current_language]} for best results.")
+
             # Advanced subtitle settings in expander
             with st.expander(tr("Advanced Subtitle Settings"), expanded=False):
                 subtitle_positions = [

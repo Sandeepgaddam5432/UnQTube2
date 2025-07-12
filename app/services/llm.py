@@ -294,6 +294,19 @@ def _generate_response(prompt: str) -> str:
 def generate_script(
     video_subject: str, language: str = "", paragraph_number: int = 1
 ) -> str:
+    # Language-specific instructions for Indian languages
+    language_instructions = {
+        "hi-IN": "Write the script entirely in Hindi. Use Devanagari script.",
+        "te-IN": "Write the script entirely in Telugu. Use Telugu script.",
+        "ta-IN": "Write the script entirely in Tamil. Use Tamil script.",
+        "kn-IN": "Write the script entirely in Kannada. Use Kannada script.",
+        "bn-IN": "Write the script entirely in Bengali. Use Bengali script.",
+        "mr-IN": "Write the script entirely in Marathi. Use Devanagari script.",
+        "gu-IN": "Write the script entirely in Gujarati. Use Gujarati script.",
+        "ml-IN": "Write the script entirely in Malayalam. Use Malayalam script.",
+        "pa-IN": "Write the script entirely in Punjabi. Use Gurmukhi script."
+    }
+    
     prompt = f"""
 # Role: Video Script Generator
 
@@ -314,8 +327,13 @@ Generate a script for a video, depending on the subject of the video.
 - video subject: {video_subject}
 - number of paragraphs: {paragraph_number}
 """.strip()
+    
+    # Add language instruction
     if language:
         prompt += f"\n- language: {language}"
+        # Add specific instructions for Indian languages
+        if language in language_instructions:
+            prompt += f"\n- language specific instruction: {language_instructions[language]}"
 
     final_script = ""
     logger.info(f"subject: {video_subject}")
@@ -366,6 +384,18 @@ Generate a script for a video, depending on the subject of the video.
 
 
 def generate_terms(video_subject: str, video_script: str, amount: int = 5) -> List[str]:
+    # Detect if the script is in a non-Latin script (likely an Indian language)
+    # We'll still generate English search terms for video materials
+    non_latin_script = any(ord(c) > 127 for c in video_script)
+    
+    additional_instructions = ""
+    if non_latin_script:
+        additional_instructions = """
+The video script is in a non-Latin script (likely an Indian language).
+Please understand the content and extract appropriate English search terms that represent the content.
+Use culturally relevant terms where appropriate.
+"""
+
     prompt = f"""
 # Role: Video Search Terms Generator
 
@@ -378,6 +408,7 @@ Generate {amount} search terms for stock videos, depending on the subject of a v
 3. you must only return the json-array of strings. you must not return anything else. you must not return the script.
 4. the search terms must be related to the subject of the video.
 5. reply with english search terms only.
+{additional_instructions}
 
 ## Output Example:
 ["search term 1", "search term 2", "search term 3","search term 4","search term 5"]

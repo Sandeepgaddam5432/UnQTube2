@@ -1,0 +1,35 @@
+{
+  "hi-IN": [
+    "hi-IN-MadhurNeural-Male",
+    "hi-IN-SwaraNeural-Female"
+  ],
+  "te-IN": [
+    "te-IN-MohanNeural-Male",
+    "te-IN-ShrutiNeural-Female"
+  ],
+  "ta-IN": [
+    "ta-IN-PallaviNeural-Female",
+    "ta-IN-ValluvarNeural-Male"
+  ],
+  "kn-IN": [
+    "kn-IN-GaganNeural-Male",
+    "kn-IN-SapnaNeural-Female"
+  ],
+  "bn-IN": [
+    "bn-IN-BashkarNeural-Male",
+    "bn-IN-TanishaaNeural-Female"
+  ],
+  "mr-IN": [
+    "mr-IN-AarohiNeural-Female",
+    "mr-IN-ManoharNeural-Male"
+  ],
+  "gu-IN": [
+    "gu-IN-DhwaniNeural-Female",
+    "gu-IN-NiranjanNeural-Male"
+  ],
+  "ml-IN": [
+    "ml-IN-MidhunNeural-Male",
+    "ml-IN-SobhanaNeural-Female"
+  ],
+  "pa-IN": []
+} 
