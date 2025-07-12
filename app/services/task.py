@@ -17,30 +17,47 @@ from app.services.progress_estimator import ProgressEstimator, StepEstimate
 
 def generate_script(task_id, params):
     logger.info("\n\n## generating video script")
-    video_script = params.video_script.strip()
-    if not video_script:
-        video_script = llm.generate_script(
+    voice_over_script = params.voice_over_script.strip()
+    subtitle_script = params.subtitle_script.strip()
+    
+    if not voice_over_script:
+        # Generate script using LLM
+        script_result = llm.generate_script(
             video_subject=params.video_subject,
             language=params.video_language,
             paragraph_number=params.paragraph_number,
         )
+        
+        if isinstance(script_result, dict):
+            voice_over_script = script_result.get("voice_over_script", "")
+            subtitle_script = script_result.get("subtitle_script", "")
+        else:
+            # Backward compatibility with older LLM service
+            voice_over_script = script_result
+            subtitle_script = script_result
     else:
-        logger.debug(f"video script: \n{video_script}")
+        logger.debug(f"Voice-over script: \n{voice_over_script}")
+        # If subtitle script is not provided but voice-over script is, use voice-over for both
+        if not subtitle_script:
+            subtitle_script = voice_over_script
+            logger.debug("Using voice-over script for subtitles as well")
+        else:
+            logger.debug(f"Subtitle script: \n{subtitle_script}")
 
-    if not video_script:
+    if not voice_over_script:
         sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
         logger.error("failed to generate video script.")
-        return None
+        return None, None
 
-    return video_script
+    return voice_over_script, subtitle_script
 
 
-def generate_terms(task_id, params, video_script):
+def generate_terms(task_id, params, voice_over_script):
     logger.info("\n\n## generating video terms")
     video_terms = params.video_terms
     if not video_terms:
         video_terms = llm.generate_terms(
-            video_subject=params.video_subject, video_script=video_script, amount=5
+            video_subject=params.video_subject, video_script=voice_over_script, amount=5
         )
     else:
         if isinstance(video_terms, str):
@@ -60,10 +77,11 @@ def generate_terms(task_id, params, video_script):
     return video_terms
 
 
-def save_script_data(task_id, video_script, video_terms, params):
+def save_script_data(task_id, voice_over_script, subtitle_script, video_terms, params):
     script_file = path.join(utils.task_dir(task_id), "script.json")
     script_data = {
-        "script": video_script,
+        "voice_over_script": voice_over_script,
+        "subtitle_script": subtitle_script,
         "search_terms": video_terms,
         "params": params,
     }
@@ -72,12 +90,24 @@ def save_script_data(task_id, video_script, video_terms, params):
         f.write(utils.to_json(script_data))
 
 
-def generate_audio(task_id, params, video_script):
+def generate_audio(task_id, params, voice_over_script):
     logger.info("\n\n## generating audio")
     audio_file = path.join(utils.task_dir(task_id), "audio.mp3")
+    
+    # Smart voice auto-correction: check if voice is compatible with language
+    voice_name = voice.parse_voice_name(params.voice_name)
+    if params.video_language and voice_name:
+        compatible_voice = voice.get_compatible_voice_for_language(params.video_language, voice_name)
+        if compatible_voice != voice_name:
+            logger.warning(f"Voice {voice_name} is not compatible with language {params.video_language}")
+            logger.info(f"Auto-correcting to compatible voice: {compatible_voice}")
+            voice_name = compatible_voice
+    else:
+        voice_name = voice.parse_voice_name(params.voice_name)
+    
     sub_maker = voice.tts(
-        text=video_script,
-        voice_name=voice.parse_voice_name(params.voice_name),
+        text=voice_over_script,
+        voice_name=voice_name,
         voice_rate=params.voice_rate,
         voice_file=audio_file,
     )
@@ -95,7 +125,7 @@ def generate_audio(task_id, params, video_script):
     return audio_file, audio_duration, sub_maker
 
 
-def generate_subtitle(task_id, params, video_script, sub_maker, audio_file):
+def generate_subtitle(task_id, params, subtitle_script, sub_maker, audio_file):
     if not params.subtitle_enabled:
         return ""
 
@@ -106,7 +136,7 @@ def generate_subtitle(task_id, params, video_script, sub_maker, audio_file):
     subtitle_fallback = False
     if subtitle_provider == "edge":
         voice.create_subtitle(
-            text=video_script, sub_maker=sub_maker, subtitle_file=subtitle_path
+            text=subtitle_script, sub_maker=sub_maker, subtitle_file=subtitle_path
         )
         if not os.path.exists(subtitle_path):
             subtitle_fallback = True
@@ -115,7 +145,7 @@ def generate_subtitle(task_id, params, video_script, sub_maker, audio_file):
     if subtitle_provider == "whisper" or subtitle_fallback:
         subtitle.create(audio_file=audio_file, subtitle_file=subtitle_path)
         logger.info("\n\n## correcting subtitle")
-        subtitle.correct(subtitle_file=subtitle_path, video_script=video_script)
+        subtitle.correct(subtitle_file=subtitle_path, video_script=subtitle_script)
 
     subtitle_lines = subtitle.file_to_subtitles(subtitle_path)
     if not subtitle_lines:
@@ -181,7 +211,7 @@ def generate_final_videos(
         def progress_callback(progress_value):
             # Calculate overall progress (50% to 75% of total task)
             overall_progress = _progress + (progress_value * 25 / params.video_count)
-            sm.state.update_task(task_id, progress=overall_progress)
+            sm.state.update_task(task_id, progress=int(overall_progress))
         
         # Use the new ultra-fast video assembly function
         video.combine_videos_ultra_fast(
@@ -195,10 +225,11 @@ def generate_final_videos(
             max_clip_duration=params.video_clip_duration,
             threads=params.n_threads,
             progress_callback=progress_callback,
+            target_duration=params.target_duration,  # Pass target_duration to video assembly
         )
 
         _progress += 50 / params.video_count / 2
-        sm.state.update_task(task_id, progress=_progress)
+        sm.state.update_task(task_id, progress=int(_progress))
 
         final_video_path = path.join(utils.task_dir(task_id), f"final-{index}.mp4")
 
@@ -212,7 +243,7 @@ def generate_final_videos(
         )
 
         _progress += 50 / params.video_count / 2
-        sm.state.update_task(task_id, progress=_progress)
+        sm.state.update_task(task_id, progress=int(_progress))
 
         final_video_paths.append(final_video_path)
         combined_video_paths.append(combined_video_path)
@@ -228,8 +259,8 @@ def start(task_id, params: VideoParams, stop_at: str = "video"):
         params.video_concat_mode = VideoConcatMode(params.video_concat_mode)
 
     # 1. Generate script
-    video_script = generate_script(task_id, params)
-    if not video_script or "Error: " in video_script:
+    voice_over_script, subtitle_script = generate_script(task_id, params)
+    if not voice_over_script:
         sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
         return
 
@@ -237,31 +268,31 @@ def start(task_id, params: VideoParams, stop_at: str = "video"):
 
     if stop_at == "script":
         sm.state.update_task(
-            task_id, state=const.TASK_STATE_COMPLETE, progress=100, script=video_script
+            task_id, state=const.TASK_STATE_COMPLETE, progress=100, script=voice_over_script
         )
-        return {"script": video_script}
+        return {"script": voice_over_script}
 
     # 2. Generate terms
     video_terms = ""
     if params.video_source != "local":
-        video_terms = generate_terms(task_id, params, video_script)
+        video_terms = generate_terms(task_id, params, voice_over_script)
         if not video_terms:
             sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
             return
 
-    save_script_data(task_id, video_script, video_terms, params)
+    save_script_data(task_id, voice_over_script, subtitle_script, video_terms, params)
 
     if stop_at == "terms":
         sm.state.update_task(
             task_id, state=const.TASK_STATE_COMPLETE, progress=100, terms=video_terms
         )
-        return {"script": video_script, "terms": video_terms}
+        return {"script": voice_over_script, "terms": video_terms}
 
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=20)
 
     # 3. Generate audio
     audio_file, audio_duration, sub_maker = generate_audio(
-        task_id, params, video_script
+        task_id, params, voice_over_script
     )
     if not audio_file:
         sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
@@ -280,7 +311,7 @@ def start(task_id, params: VideoParams, stop_at: str = "video"):
 
     # 4. Generate subtitle
     subtitle_path = generate_subtitle(
-        task_id, params, video_script, sub_maker, audio_file
+        task_id, params, subtitle_script, sub_maker, audio_file
     )
 
     if stop_at == "subtitle":
@@ -383,7 +414,7 @@ def start(task_id, params: VideoParams, stop_at: str = "video"):
     kwargs = {
         "videos": final_video_paths,
         "combined_videos": combined_video_paths,
-        "script": video_script,
+        "script": voice_over_script,
         "terms": video_terms,
         "audio_file": audio_file,
         "audio_duration": audio_duration,

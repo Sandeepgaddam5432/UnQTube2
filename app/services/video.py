@@ -25,6 +25,8 @@ from moviepy import (
 )
 from moviepy.video.tools.subtitles import SubtitlesClip
 from PIL import ImageFont
+import math
+import re
 
 from app.models import const
 from app.models.schema import (
@@ -787,96 +789,201 @@ def preprocess_video(materials: List[MaterialInfo], clip_duration=4):
     return materials
 
 def combine_videos_ultra_fast(
-    combined_video_path: str,
-    video_paths: List[str],
-    audio_file: str,
-    video_aspect: VideoAspect = VideoAspect.portrait,
-    video_concat_mode: VideoConcatMode = VideoConcatMode.random,
-    video_transition_mode: VideoTransitionMode = None,
-    video_resolution: VideoResolution = VideoResolution.hd_720p,
-    max_clip_duration: int = 5,
-    threads: int = 2,
-    progress_callback = None,
-) -> Optional[str]:
-    logger.info("Starting ULTIMATE video assembly with new architecture...")
-    orchestrator = VideoGenerationOrchestrator()
+    combined_video_path,
+    video_paths,
+    audio_file,
+    video_aspect=VideoAspect.portrait.value,
+    video_concat_mode=VideoConcatMode.random.value,
+    video_transition_mode=VideoTransitionMode.none.value,
+    video_resolution=VideoResolution.hd_720p.value,
+    max_clip_duration=5,
+    threads=2,
+    progress_callback=None,
+    target_duration=None,
+):
+    """
+    Combine multiple videos into one using FFmpeg directly for much better performance
     
-    # Create output directory if it doesn't exist
-    output_dir = os.path.dirname(combined_video_path)
-    os.makedirs(output_dir, exist_ok=True)
-    
-    if not video_paths:
-        logger.critical("No video paths provided for combining")
-        return None
+    Args:
+        combined_video_path: Path to save the combined video
+        video_paths: List of video paths to combine
+        audio_file: Path to the audio file
+        video_aspect: Aspect ratio of the video
+        video_concat_mode: How to concatenate videos (random or sequential)
+        video_transition_mode: Transition effect between videos
+        video_resolution: Resolution of the output video
+        max_clip_duration: Maximum duration of each clip
+        threads: Number of threads to use
+        progress_callback: Callback function to report progress
+        target_duration: Target duration of the final video in seconds
         
-    if not os.path.exists(audio_file):
-        logger.critical(f"Audio file does not exist: {audio_file}")
+    Returns:
+        Path to the combined video
+    """
+    if not video_paths:
+        logger.error("No video paths provided")
         return None
+
+    # Get audio duration
+    audio_duration = get_audio_duration(audio_file)
+    if audio_duration <= 0:
+        logger.error(f"Invalid audio duration: {audio_duration}")
+        return None
+
+    # Determine target duration (use audio duration if target_duration is not specified)
+    final_duration = target_duration if target_duration else audio_duration
+    logger.info(f"Target video duration: {final_duration} seconds")
+    
+    # Calculate how many clips we need based on target duration
+    total_clips_needed = math.ceil(final_duration / max_clip_duration)
+    logger.info(f"Need approximately {total_clips_needed} clips for target duration")
+    
+    # Prepare video paths based on concat mode
+    if video_concat_mode == VideoConcatMode.random.value:
+        # Shuffle the video paths
+        random.shuffle(video_paths)
+        
+        # If we don't have enough videos, repeat them
+        if len(video_paths) < total_clips_needed:
+            original_paths = video_paths.copy()
+            while len(video_paths) < total_clips_needed:
+                random.shuffle(original_paths)
+                video_paths.extend(original_paths)
+    
+    # Limit to the number of clips we need
+    video_paths = video_paths[:total_clips_needed]
+    
+    # Calculate clip duration to match target duration
+    adjusted_clip_duration = final_duration / len(video_paths)
+    logger.info(f"Adjusted clip duration: {adjusted_clip_duration:.2f} seconds")
+
+    # Create a temporary directory for intermediate files
+    temp_dir = os.path.dirname(combined_video_path)
+    os.makedirs(temp_dir, exist_ok=True)
+
+    # Get video dimensions based on aspect ratio and resolution
+    width, height = VideoAspect(video_aspect).to_resolution()
+    resolution_multiplier = VideoResolution(video_resolution).to_multiplier()
+    width = int(width * resolution_multiplier)
+    height = int(height * resolution_multiplier)
+
+    # Prepare FFmpeg command
+    ffmpeg_cmd = [
+        "ffmpeg", "-y",  # Overwrite output files without asking
+        "-threads", str(threads),  # Use multiple threads
+    ]
+
+    # Add input files
+    input_files = []
+    for i, video_path in enumerate(video_paths):
+        ffmpeg_cmd.extend(["-i", video_path])
+        input_files.append(f"[{i}:v]")
+
+    # Add audio input
+    ffmpeg_cmd.extend(["-i", audio_file])
+    audio_input_index = len(video_paths)
+
+    # Build complex filter for scaling, trimming, and concatenating videos
+    filter_complex = []
+    
+    # Scale and trim each video
+    for i in range(len(video_paths)):
+        # Scale to target dimensions maintaining aspect ratio
+        filter_complex.append(
+            f"[{i}:v]scale={width}:{height}:force_original_aspect_ratio=decrease,"
+            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,trim=duration={adjusted_clip_duration}[v{i}];"
+        )
+    
+    # Concatenate videos
+    concat_inputs = "".join([f"[v{i}]" for i in range(len(video_paths))])
+    filter_complex.append(f"{concat_inputs}concat=n={len(video_paths)}:v=1:a=0[outv]")
+    
+    # Add filter complex to command
+    ffmpeg_cmd.extend(["-filter_complex", "".join(filter_complex)])
+    
+    # Map outputs
+    ffmpeg_cmd.extend([
+        "-map", "[outv]",  # Video output
+        "-map", f"{audio_input_index}:a",  # Audio output
+    ])
+    
+    # Set output options
+    ffmpeg_cmd.extend([
+        "-c:v", "libx264",  # Video codec
+        "-preset", "medium",  # Encoding speed/quality tradeoff
+        "-crf", "23",  # Quality level (lower is better)
+        "-c:a", "aac",  # Audio codec
+        "-b:a", "192k",  # Audio bitrate
+    ])
+    
+    # Set target duration if specified
+    if target_duration:
+        ffmpeg_cmd.extend(["-t", str(target_duration)])
+    
+    # Output file
+    ffmpeg_cmd.append(combined_video_path)
+    
+    # Execute FFmpeg command
+    logger.info(f"Running FFmpeg command: {' '.join(ffmpeg_cmd)}")
     
     try:
-        # Load audio file and get duration
-        audio_clip = AudioFileClip(audio_file)
-        audio_duration = audio_clip.duration
-        audio_clip.close()
-        
-        logger.info(f"Audio duration: {audio_duration} seconds")
-        logger.info(f"Maximum clip duration: {max_clip_duration} seconds")
-        
-        # Create VideoSegment objects from the input paths
-        segments = []
-        valid_video_paths = [p for p in video_paths if os.path.exists(p) and os.path.getsize(p) > 0]
-        
-        for video_path in valid_video_paths:
-            try:
-                # Get the duration of each video
-                cmd = [
-                    'ffprobe', '-v', 'error', 
-                    '-show_entries', 'format=duration', 
-                    '-of', 'csv=p=0', 
-                    video_path
-                ]
-                result = subprocess.run(cmd, capture_output=True, text=True)
-                if result.returncode == 0:
-                    clip_duration = float(result.stdout.strip())
-                    # Create segment with appropriate duration
-                    duration = min(clip_duration, max_clip_duration)
-                    segments.append(VideoSegment(
-                        path=video_path,
-                        duration=duration,
-                        start_time=0.0,
-                        end_time=duration
-                    ))
-            except Exception as e:
-                logger.error(f"Error processing video {video_path}: {e}")
-        
-        if not segments:
-            logger.critical("No valid segments could be created")
-            return None
-            
-        # If using random concat mode, shuffle the segments
-        if video_concat_mode.value == VideoConcatMode.random.value:
-            random.shuffle(segments)
-            
-        # Define a progress callback for frontend updates
-        def progress_update(message, progress):
-            logger.info(f"[PROGRESS {progress*100:.1f}%]: {message}")
-            if progress_callback:
-                progress_callback(progress)
-        
-        final_video_path = combined_video_path
-        success = orchestrator.generate_video_with_estimation(
-            segments=segments,
-            output_path=final_video_path,
-            target_duration=audio_duration,  # Use actual audio duration
-            progress_callback=progress_update
+        process = subprocess.Popen(
+            ffmpeg_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
         )
-
-        if success:
-            logger.success("ULTIMATE video assembly completed successfully!")
-            return final_video_path
-        else:
-            logger.error("ULTIMATE video assembly failed.")
+        
+        # Process output to track progress
+        for line in process.stderr:
+            if "time=" in line and progress_callback:
+                # Extract time information
+                time_match = re.search(r"time=(\d+):(\d+):(\d+\.\d+)", line)
+                if time_match:
+                    hours, minutes, seconds = map(float, time_match.groups())
+                    current_time = hours * 3600 + minutes * 60 + seconds
+                    progress = min(100, (current_time / final_duration) * 100)
+                    progress_callback(progress)
+        
+        process.wait()
+        
+        if process.returncode != 0:
+            logger.error(f"FFmpeg command failed with return code {process.returncode}")
             return None
+        
+        return combined_video_path
+        
     except Exception as e:
-        logger.critical(f"Critical error in ultra-fast assembly: {str(e)}")
+        logger.error(f"Error running FFmpeg command: {e}")
         return None
+
+def get_audio_duration(audio_file):
+    """
+    Get the duration of an audio file using ffprobe
+    
+    Args:
+        audio_file: Path to the audio file
+        
+    Returns:
+        Duration in seconds, or -1 if an error occurs
+    """
+    if not os.path.exists(audio_file):
+        logger.error(f"Audio file does not exist: {audio_file}")
+        return -1
+        
+    try:
+        cmd = [
+            'ffprobe', '-v', 'error', 
+            '-show_entries', 'format=duration', 
+            '-of', 'csv=p=0', 
+            audio_file
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            return float(result.stdout.strip())
+        else:
+            logger.error(f"ffprobe failed: {result.stderr}")
+            return -1
+    except Exception as e:
+        logger.error(f"Error getting audio duration: {e}")
+        return -1

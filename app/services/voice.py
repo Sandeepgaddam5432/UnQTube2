@@ -3,8 +3,10 @@ import os
 import re
 import base64
 import json
+import tempfile
 from datetime import datetime
-from typing import Union
+from typing import Optional, Dict, Any, Union
+from pathlib import Path
 from xml.sax.saxutils import unescape
 
 import edge_tts
@@ -13,9 +15,212 @@ from edge_tts import SubMaker, submaker
 from edge_tts.submaker import mktimestamp
 from loguru import logger
 from moviepy.video.tools import subtitles
+from pydantic import BaseModel
 
 from app.config import config
 from app.utils import utils
+
+
+# Gemini TTS implementation
+class GeminiTTSConfig(BaseModel):
+    api_key: str
+    base_url: str = "https://generativelanguage.googleapis.com/v1beta/models"
+    model: str = "gemini-1.5-flash"
+    voice_name: str = "Aoede"
+    max_retries: int = 3
+    timeout: int = 30
+
+
+class GeminiTTSService:
+    def __init__(self, config: GeminiTTSConfig):
+        self.config = config
+        self.session = None
+    
+    async def __aenter__(self):
+        self.session = requests.Session()
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            self.session.close()
+
+    def _build_request_payload(self, text: str, voice_config: Optional[str] = None) -> Dict[str, Any]:
+        """Build the JSON payload for Gemini TTS API"""
+        voice_name = voice_config or self.config.voice_name
+        
+        return {
+            "contents": [{
+                "parts": [{"text": f"Generate speech for the following text: {text}"}]
+            }],
+            "generationConfig": {
+                "response_modalities": ["AUDIO"],
+                "speech_config": {
+                    "voice_config": {
+                        "prebuilt_voice_config": {
+                            "voice_name": voice_name
+                        }
+                    }
+                }
+            }
+        }
+
+    async def generate_speech_async(
+        self, 
+        text: str, 
+        voice_config: Optional[str] = None,
+        output_path: Optional[str] = None
+    ) -> str:
+        """
+        Generate speech using Gemini TTS API (async)
+        
+        Args:
+            text: Text to convert to speech
+            voice_config: Voice configuration name
+            output_path: Path to save the audio file
+            
+        Returns:
+            Path to the generated audio file
+        """
+        if not self.session:
+            raise RuntimeError("GeminiTTSService must be used as async context manager")
+        
+        url = f"{self.config.base_url}/{self.config.model}:generateContent"
+        headers = {
+            "Content-Type": "application/json",
+            "x-goog-api-key": self.config.api_key
+        }
+        
+        payload = self._build_request_payload(text, voice_config)
+        
+        for attempt in range(self.config.max_retries):
+            try:
+                logger.info(f"Gemini TTS attempt {attempt + 1}/{self.config.max_retries}")
+                
+                response = self.session.post(url, json=payload, headers=headers)
+                if response.status_code == 200:
+                    response_data = response.json()
+                    return await self._process_audio_response(response_data, output_path)
+                else:
+                    error_text = response.text
+                    logger.error(f"Gemini TTS API error {response.status_code}: {error_text}")
+                    
+                    if response.status_code == 400:
+                        raise ValueError(f"Invalid request: {error_text}")
+                    elif response.status_code == 401:
+                        raise ValueError("Invalid API key")
+                    elif response.status_code == 429:
+                        # Rate limit, wait and retry
+                        await asyncio.sleep(2 ** attempt)
+                        continue
+                        
+            except requests.RequestException as e:
+                logger.error(f"Network error on attempt {attempt + 1}: {e}")
+                if attempt == self.config.max_retries - 1:
+                    raise
+                await asyncio.sleep(1)
+        
+        raise RuntimeError(f"Failed to generate speech after {self.config.max_retries} attempts")
+
+    async def _process_audio_response(self, response_data: Dict[str, Any], output_path: Optional[str] = None) -> str:
+        """Process the API response and save audio data"""
+        try:
+            # Extract audio data from response
+            candidates = response_data.get("candidates", [])
+            if not candidates:
+                raise ValueError("No audio candidates in response")
+            
+            content = candidates[0].get("content", {})
+            parts = content.get("parts", [])
+            
+            audio_data = None
+            for part in parts:
+                if "inline_data" in part:
+                    audio_data = part["inline_data"]["data"]
+                    break
+            
+            if not audio_data:
+                raise ValueError("No audio data found in response")
+            
+            # Decode base64 audio data
+            audio_bytes = base64.b64decode(audio_data)
+            
+            # Save to file
+            if output_path:
+                audio_path = Path(output_path)
+            else:
+                # Create temporary file
+                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+                audio_path = Path(temp_file.name)
+                temp_file.close()
+            
+            with open(audio_path, "wb") as f:
+                f.write(audio_bytes)
+            
+            logger.info(f"Audio saved to: {audio_path}")
+            return str(audio_path)
+            
+        except Exception as e:
+            logger.error(f"Error processing audio response: {e}")
+            raise
+
+    def generate_speech_sync(
+        self, 
+        text: str, 
+        voice_config: Optional[str] = None,
+        output_path: Optional[str] = None
+    ) -> str:
+        """
+        Synchronous wrapper for speech generation
+        """
+        return asyncio.run(self.generate_speech_async(text, voice_config, output_path))
+
+
+# Integration with existing voice service
+async def gemini_tts_v1(
+    text: str,
+    voice_name: str = "Aoede",
+    api_key: str = None,
+    output_path: str = None,
+    **kwargs
+) -> str:
+    """
+    Main function to integrate with existing voice service
+    """
+    if not api_key:
+        api_key = config.app.get("gemini_api_key")
+        if not api_key:
+            raise ValueError("Gemini API key is required")
+    
+    config_obj = GeminiTTSConfig(
+        api_key=api_key,
+        voice_name=voice_name
+    )
+    
+    async with GeminiTTSService(config_obj) as tts_service:
+        return await tts_service.generate_speech_async(text, voice_name, output_path)
+
+
+# Voice preview functionality
+async def generate_voice_preview(
+    voice_name: str,
+    api_key: str = None,
+    sample_text: str = "Hello, this is a voice preview sample."
+) -> str:
+    """
+    Generate a short voice preview for UI
+    """
+    if not api_key:
+        api_key = config.app.get("gemini_api_key")
+        if not api_key:
+            raise ValueError("Gemini API key is required")
+            
+    config_obj = GeminiTTSConfig(
+        api_key=api_key,
+        voice_name=voice_name
+    )
+    
+    async with GeminiTTSService(config_obj) as tts_service:
+        return await tts_service.generate_speech_async(sample_text, voice_name)
 
 
 def get_siliconflow_voices() -> list[str]:
@@ -1190,25 +1395,89 @@ def google_gemini_tts(
 
 def get_google_gemini_voices() -> list[str]:
     """
-    Get a list of available Google Gemini voices
+    Get the list of Google Gemini voices
     
     Returns:
-        Voice list, format is ["gemini:natural-Natural", "gemini:casual-Casual", ...]
+        Voice list with format "google-gemini:voice_name-gender"
     """
-    # Define the list of available voices and their display names
-    voices_with_display = [
-        ("natural", "Natural"),
-        ("casual", "Casual"),
-        ("expressive", "Expressive")
+    # Google Gemini voice list
+    voices_with_gender = [
+        ("Aoede", "Female"),
+        ("Arachne", "Female"),
+        ("Calliope", "Female"),
+        ("Clio", "Female"),
+        ("Erato", "Female"),
+        ("Euterpe", "Female"),
+        ("Melete", "Female"),
+        ("Polyhymnia", "Female"),
+        ("Terpsichore", "Female"),
+        ("Thalia", "Female"),
+        ("Urania", "Female"),
+        ("Apollo", "Male"),
+        ("Helios", "Male"),
+        ("Hyperion", "Male"),
+        ("Oceanus", "Male"),
+        ("Prometheus", "Male"),
     ]
     
-    # Format the voices with gemini: prefix
-    return [f"gemini:{voice}-{display}" for voice, display in voices_with_display]
+    # Format as display name
+    return [
+        f"google-gemini:{voice}-{gender}"
+        for voice, gender in voices_with_gender
+    ]
 
 
 def is_google_gemini_voice(voice_name: str):
-    """Check if it's a Google Gemini voice"""
-    return voice_name.startswith("gemini:")
+    return voice_name and voice_name.startswith("google-gemini:")
+
+
+def google_gemini_tts(
+    text: str, 
+    voice_name: str, 
+    voice_rate: float = 1.0, 
+    voice_file: str = None,
+    voice_volume: float = 1.0
+) -> Union[SubMaker, None]:
+    """
+    Generate speech using Google Gemini TTS
+    
+    Args:
+        text: Text to convert to speech
+        voice_name: Voice name (format: "google-gemini:voice_name-gender")
+        voice_rate: Voice rate (not used by Gemini, but kept for API compatibility)
+        voice_file: Path to save the audio file
+        voice_volume: Voice volume (not used by Gemini, but kept for API compatibility)
+        
+    Returns:
+        SubMaker object for subtitle generation
+    """
+    try:
+        # Extract the actual voice name from the format "google-gemini:voice_name-gender"
+        voice_parts = voice_name.split(":")
+        if len(voice_parts) > 1:
+            voice_name = voice_parts[1].split("-")[0]  # Get just the voice name part
+        
+        logger.info(f"Using Google Gemini TTS with voice: {voice_name}")
+        
+        # Create a SubMaker instance for subtitle generation
+        sub_maker = SubMaker()
+        
+        # Get the audio file path
+        audio_path = asyncio.run(gemini_tts_v1(
+            text=text,
+            voice_name=voice_name,
+            output_path=voice_file
+        ))
+        
+        # Add a dummy entry to the SubMaker for compatibility
+        # This is needed because the subtitle generation code expects a SubMaker with offset data
+        sub_maker.add(0, len(text), text)
+        
+        return sub_maker
+        
+    except Exception as e:
+        logger.error(f"Error in Google Gemini TTS: {e}")
+        return None
 
 
 def tts(
@@ -1218,38 +1487,52 @@ def tts(
     voice_file: str,
     voice_volume: float = 1.0,
 ) -> Union[SubMaker, None]:
-    if is_azure_v2_voice(voice_name):
-        return azure_tts_v2(text, voice_name, voice_file)
-    elif is_siliconflow_voice(voice_name):
-        # Extract model and voice from voice_name
-        # Format: siliconflow:model:voice-Gender
-        parts = voice_name.split(":")
-        if len(parts) >= 3:
-            model = parts[1]
-            # Remove gender suffix, e.g. "alex-Male" -> "alex"
-            voice_with_gender = parts[2]
-            voice = voice_with_gender.split("-")[0]
-            # Build complete voice parameter, format is "model:voice"
-            full_voice = f"{model}:{voice}"
-            return siliconflow_tts(
-                text, model, full_voice, voice_rate, voice_file, voice_volume
-            )
-        else:
-            logger.error(f"Invalid siliconflow voice name format: {voice_name}")
-            return None
+    """
+    Generate speech from text using different TTS providers
+    
+    Args:
+        text: Text to convert to speech
+        voice_name: Voice name
+        voice_rate: Voice rate
+        voice_file: Path to save the audio file
+        voice_volume: Voice volume
+        
+    Returns:
+        SubMaker object for subtitle generation
+    """
+    # Format text for TTS
+    text = _format_text(text)
+    
+    # Check which TTS provider to use
+    if is_siliconflow_voice(voice_name):
+        # Silicon Flow TTS
+        model, voice = voice_name.split(":")[1].split("/")
+        voice = voice.split(":")[1]
+        return siliconflow_tts(
+            text=text,
+            model=model,
+            voice=voice,
+            voice_rate=voice_rate,
+            voice_file=voice_file,
+            voice_volume=voice_volume,
+        )
     elif is_google_gemini_voice(voice_name):
-        # Format: gemini:voice_name (e.g., gemini:natural)
-        parts = voice_name.split(":")
-        if len(parts) >= 2:
-            # Extract the actual voice name (e.g., natural, casual, expressive)
-            gemini_voice = parts[1]
-            return google_gemini_tts(
-                text, gemini_voice, voice_rate, voice_file, voice_volume
-            )
-        else:
-            logger.error(f"Invalid Google Gemini voice name format: {voice_name}")
-            return None
-    return azure_tts_v1(text, voice_name, voice_rate, voice_file)
+        # Google Gemini TTS
+        return google_gemini_tts(
+            text=text,
+            voice_name=voice_name,
+            voice_rate=voice_rate,
+            voice_file=voice_file,
+            voice_volume=voice_volume,
+        )
+    elif is_azure_v2_voice(voice_name):
+        # Azure TTS v2
+        return azure_tts_v2(text=text, voice_name=voice_name, voice_file=voice_file)
+    else:
+        # Default to Azure TTS v1
+        return azure_tts_v1(
+            text=text, voice_name=voice_name, voice_rate=voice_rate, voice_file=voice_file
+        )
 
 
 def convert_rate_to_percent(rate: float) -> str:
@@ -1639,6 +1922,57 @@ def get_audio_duration(sub_maker: submaker.SubMaker):
     if not sub_maker.offset:
         return 0.0
     return sub_maker.offset[-1][1] / 10000000
+
+
+def get_compatible_voice_for_language(script_language: str, current_voice: str) -> str:
+    """
+    Get a compatible voice for the given script language
+    
+    Args:
+        script_language: The language code of the script (e.g., 'te-IN', 'hi-IN')
+        current_voice: The currently selected voice name
+        
+    Returns:
+        A compatible voice name for the given language, or the current voice if it's compatible
+    """
+    # Extract the language prefix from the script language code
+    language_prefix = script_language.split('-')[0].lower() if script_language and '-' in script_language else ''
+    
+    # Check if the current voice matches the script language
+    if language_prefix and current_voice and script_language.lower() in current_voice.lower():
+        # Current voice is already compatible
+        return current_voice
+    
+    # Voice-to-language mapping
+    voice_language_map = {
+        "te": ["te-IN-ShrutiNeural-Female", "te-IN-MohanNeural-Male"],
+        "hi": ["hi-IN-SwaraNeural-Female", "hi-IN-MadhurNeural-Male"],
+        "en": ["en-US-AriaNeural-Female", "en-GB-SoniaNeural-Female", "en-US-GuyNeural-Male"],
+        "ta": ["ta-IN-PallaviNeural-Female", "ta-IN-ValluvarNeural-Male"],
+        "kn": ["kn-IN-SapnaNeural-Female", "kn-IN-GaganNeural-Male"],
+        "bn": ["bn-IN-TanishaaNeural-Female", "bn-IN-BashkarNeural-Male"],
+        "mr": ["mr-IN-AarohiNeural-Female", "mr-IN-ManoharNeural-Male"],
+        "gu": ["gu-IN-DhwaniNeural-Female", "gu-IN-NiranjanNeural-Male"],
+        "ml": ["ml-IN-SobhanaNeural-Female", "ml-IN-MidhunNeural-Male"],
+        "pa": ["pa-IN-GurleenNeural-Female", "pa-IN-JaskaranNeural-Male"],
+        "zh": ["zh-CN-XiaoxiaoNeural-Female", "zh-CN-YunxiNeural-Male"],
+        "de": ["de-DE-KatjaNeural-Female", "de-DE-ConradNeural-Male"],
+        "fr": ["fr-FR-DeniseNeural-Female", "fr-FR-HenriNeural-Male"],
+        "vi": ["vi-VN-HoaiMyNeural-Female", "vi-VN-NamMinhNeural-Male"],
+        "th": ["th-TH-AcharaNeural-Female", "th-TH-PremwadeeNeural-Female"],
+    }
+    
+    # If language prefix is found in the mapping, return the first compatible voice
+    if language_prefix in voice_language_map:
+        compatible_voices = voice_language_map[language_prefix]
+        return compatible_voices[0]  # Return the first (female) voice by default
+    
+    # If no compatible voice found, return the current voice or a default English voice
+    if current_voice:
+        return current_voice
+    
+    # Fallback to English
+    return "en-US-AriaNeural-Female"
 
 
 if __name__ == "__main__":

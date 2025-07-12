@@ -293,7 +293,18 @@ def _generate_response(prompt: str) -> str:
 
 def generate_script(
     video_subject: str, language: str = "", paragraph_number: int = 1
-) -> str:
+) -> dict:
+    """
+    Generate a script for a video, with support for hybrid language mode.
+    
+    Args:
+        video_subject: The subject of the video
+        language: The target language for the voice-over script
+        paragraph_number: The number of paragraphs in the script
+        
+    Returns:
+        A dictionary containing both the voice-over script and subtitle script
+    """
     # Language-specific instructions for Indian languages
     language_instructions = {
         "hi-IN": "Write the script entirely in Hindi. Use Devanagari script.",
@@ -307,6 +318,58 @@ def generate_script(
         "pa-IN": "Write the script entirely in Punjabi. Use Gurmukhi script."
     }
     
+    # First, generate the script in English for subtitles if target language is not English
+    subtitle_script = ""
+    is_hybrid_mode = language and not language.startswith("en")
+    
+    if is_hybrid_mode:
+        # Generate the English script first for subtitles
+        english_prompt = f"""
+# Role: Video Script Generator
+
+## Goals:
+Generate a script for a video, depending on the subject of the video.
+
+## Constrains:
+1. the script is to be returned as a string with the specified number of paragraphs.
+2. do not under any circumstance reference this prompt in your response.
+3. get straight to the point, don't start with unnecessary things like, "welcome to this video".
+4. you must not include any type of markdown or formatting in the script, never use a title.
+5. only return the raw content of the script.
+6. do not include "voiceover", "narrator" or similar indicators of what should be spoken at the beginning of each paragraph or line.
+7. you must not mention the prompt, or anything about the script itself. also, never talk about the amount of paragraphs or lines. just write the script.
+8. respond in English regardless of the video subject language.
+
+# Initialization:
+- video subject: {video_subject}
+- number of paragraphs: {paragraph_number}
+- language: English
+""".strip()
+
+        logger.info("Generating English script for subtitles...")
+        subtitle_script = ""
+        
+        for i in range(_max_retries):
+            try:
+                response = _generate_response(prompt=english_prompt)
+                if response:
+                    subtitle_script = format_response(response)
+                else:
+                    logging.error("LLM returned an empty response for English script")
+
+                # g4f may return an error message
+                if subtitle_script and "当日额度已消耗完" in subtitle_script:
+                    raise ValueError(subtitle_script)
+
+                if subtitle_script:
+                    break
+            except Exception as e:
+                logger.error(f"Failed to generate English script: {e}")
+
+            if i < _max_retries:
+                logger.warning(f"Failed to generate English script, trying again... {i + 1}")
+    
+    # Now generate the script in the target language for voice-over
     prompt = f"""
 # Role: Video Script Generator
 
@@ -334,53 +397,67 @@ Generate a script for a video, depending on the subject of the video.
         # Add specific instructions for Indian languages
         if language in language_instructions:
             prompt += f"\n- language specific instruction: {language_instructions[language]}"
+        
+        # If we have an English subtitle script and need to translate it
+        if is_hybrid_mode and subtitle_script:
+            prompt += f"\n\n## Additional Instructions:\nTranslate the following English script into {language}:\n\n{subtitle_script}"
 
-    final_script = ""
-    logger.info(f"subject: {video_subject}")
-
-    def format_response(response):
-        # Clean the script
-        # Remove asterisks, hashes
-        response = response.replace("*", "")
-        response = response.replace("#", "")
-
-        # Remove markdown syntax
-        response = re.sub(r"\[.*\]", "", response)
-        response = re.sub(r"\(.*\)", "", response)
-
-        # Split the script into paragraphs
-        paragraphs = response.split("\n\n")
-
-        # Select the specified number of paragraphs
-        # selected_paragraphs = paragraphs[:paragraph_number]
-
-        # Join the selected paragraphs into a single string
-        return "\n\n".join(paragraphs)
+    voice_over_script = ""
+    logger.info(f"Generating script in target language: {language if language else 'auto-detect'}")
 
     for i in range(_max_retries):
         try:
             response = _generate_response(prompt=prompt)
             if response:
-                final_script = format_response(response)
+                voice_over_script = format_response(response)
             else:
-                logging.error("gpt returned an empty response")
+                logging.error("LLM returned an empty response for target language script")
 
             # g4f may return an error message
-            if final_script and "当日额度已消耗完" in final_script:
-                raise ValueError(final_script)
+            if voice_over_script and "当日额度已消耗完" in voice_over_script:
+                raise ValueError(voice_over_script)
 
-            if final_script:
+            if voice_over_script:
                 break
         except Exception as e:
-            logger.error(f"failed to generate script: {e}")
+            logger.error(f"Failed to generate script in target language: {e}")
 
         if i < _max_retries:
-            logger.warning(f"failed to generate video script, trying again... {i + 1}")
-    if "Error: " in final_script:
-        logger.error(f"failed to generate video script: {final_script}")
+            logger.warning(f"Failed to generate script in target language, trying again... {i + 1}")
+    
+    if "Error: " in voice_over_script:
+        logger.error(f"Failed to generate video script: {voice_over_script}")
     else:
-        logger.success(f"completed: \n{final_script}")
-    return final_script.strip()
+        logger.success(f"Completed script generation")
+        logger.debug(f"Voice-over script: \n{voice_over_script}")
+        if subtitle_script:
+            logger.debug(f"Subtitle script: \n{subtitle_script}")
+    
+    # If we didn't generate a separate subtitle script, use the voice-over script for both
+    if not subtitle_script:
+        subtitle_script = voice_over_script
+    
+    return {
+        "voice_over_script": voice_over_script.strip(),
+        "subtitle_script": subtitle_script.strip()
+    }
+
+
+def format_response(response):
+    # Clean the script
+    # Remove asterisks, hashes
+    response = response.replace("*", "")
+    response = response.replace("#", "")
+
+    # Remove markdown syntax
+    response = re.sub(r"\[.*\]", "", response)
+    response = re.sub(r"\(.*\)", "", response)
+
+    # Split the script into paragraphs
+    paragraphs = response.split("\n\n")
+
+    # Join the selected paragraphs into a single string
+    return "\n\n".join(paragraphs)
 
 
 def generate_terms(video_subject: str, video_script: str, amount: int = 5) -> List[str]:

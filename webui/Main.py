@@ -668,38 +668,83 @@ with tabs[0]:
             "pa-IN": "Punjabi (ਪੰਜਾਬੀ)"
         }
         
-        for code in support_locales:
-            # Use display name if available, otherwise use the code
-            display_name = language_display_names.get(code, code)
-            video_languages.append((display_name, code))
-
-        selected_index = st.selectbox(
+        for locale in support_locales:
+            # Use special display names for Indian languages
+            if locale in language_display_names:
+                display_name = language_display_names[locale]
+            else:
+                display_name = locale
+            video_languages.append((display_name, locale))
+        
+        selected_language_index = 0
+        saved_language = config.ui.get("video_language", "")
+        for i, (_, lang_code) in enumerate(video_languages):
+            if lang_code == saved_language:
+                selected_language_index = i
+                break
+        
+        selected_language_option = st.selectbox(
             tr("Script Language"),
-            index=0,
             options=range(len(video_languages)),
             format_func=lambda x: video_languages[x][0],
+            index=selected_language_index,
+            key="selected_language"
         )
-        params.video_language = video_languages[selected_index][1]
+        selected_language = video_languages[selected_language_option][1]
+        config.ui["video_language"] = selected_language
+        params.video_language = selected_language
+        
+        # Add hybrid language mode checkbox
+        hybrid_mode = False
+        if selected_language and not selected_language.startswith("en"):
+            hybrid_mode = st.checkbox(
+                tr("Hybrid Language Mode"),
+                value=False,
+                help=tr("Generate voice-over in selected language but subtitles in English")
+            )
+            
+            if hybrid_mode:
+                st.info(tr("Hybrid mode enabled: Voice-over will be in the selected language, subtitles will be in English."))
     
     with col2:
-        if st.button(
-            "✨ " + tr("Generate Video Script and Keywords"), 
-            key="auto_generate_script",
-            use_container_width=True
-        ):
-            with st.spinner(tr("Generating Video Script and Keywords...")):
-                script = llm.generate_script(
-                    video_subject=params.video_subject, language=params.video_language
-                )
-                terms = llm.generate_terms(params.video_subject, script)
-                if "Error: " in script:
-                    st.error(tr(script))
-                elif "Error: " in terms:
-                    st.error(tr(terms))
-                else:
-                    st.session_state["video_script"] = script
-                    st.session_state["video_terms"] = ", ".join(terms)
-                    st.success(tr("Script and keywords generated successfully!"))
+        # Video subject input
+        video_subject = st.text_area(
+            tr("Video Subject"),
+            value=st.session_state.get("video_subject", ""),
+            height=100,
+            placeholder=tr("Enter the subject of your video here..."),
+            help=tr("This is the main topic or subject of your video. Be specific for better results."),
+        )
+        st.session_state["video_subject"] = video_subject
+        params.video_subject = video_subject
+
+        # Video script input - renamed to voice_over_script
+        voice_over_script = st.text_area(
+            tr("Voice-over Script"),
+            value=st.session_state.get("video_script", ""),  # Backward compatibility with old session state key
+            height=150,
+            placeholder=tr("Enter your script here, or leave blank to auto-generate..."),
+            help=tr("This is the script that will be used for the voice-over. Leave blank to auto-generate."),
+        )
+        # Update both the old and new session state keys for backward compatibility
+        st.session_state["video_script"] = voice_over_script
+        st.session_state["voice_over_script"] = voice_over_script
+        params.voice_over_script = voice_over_script
+        
+        # Subtitle script input - only show in hybrid mode
+        if hybrid_mode:
+            subtitle_script = st.text_area(
+                tr("Subtitle Script (English)"),
+                value=st.session_state.get("subtitle_script", ""),
+                height=150,
+                placeholder=tr("Enter English subtitle script here, or leave blank to auto-generate..."),
+                help=tr("This script will be used for subtitles. Leave blank to auto-generate English subtitles."),
+            )
+            st.session_state["subtitle_script"] = subtitle_script
+            params.subtitle_script = subtitle_script
+        else:
+            # In non-hybrid mode, subtitle script is the same as voice-over script
+            params.subtitle_script = ""  # Will use voice_over_script by default in the backend
     
     # Display script in a larger area
     st.subheader(tr("Video Script"))
@@ -846,6 +891,18 @@ with tabs[1]:
                 options=[1, 2, 3, 4, 5],
                 value=1
             )
+            
+        # Add target duration field
+        with st.expander(tr("Advanced Video Settings"), expanded=False):
+            target_duration = st.slider(
+                tr("Target Video Duration (seconds)"),
+                min_value=10,
+                max_value=180,
+                value=60,
+                step=10,
+                help=tr("Set a specific target duration for the final video. The system will try to match this duration by adjusting clips.")
+            )
+            params.target_duration = target_duration if target_duration > 0 else None
 
     with col2:
         # Background music settings

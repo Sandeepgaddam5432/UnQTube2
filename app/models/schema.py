@@ -84,7 +84,8 @@ class VideoParams(BaseModel):
     """
 
     video_subject: str
-    video_script: str = ""  # Script used to generate the video
+    voice_over_script: str = ""  # Script used for voice-over audio
+    subtitle_script: Optional[str] = ""  # Script used for subtitles (if different from voice_over_script)
     video_terms: Optional[str | list] = None  # Keywords used to generate the video
     video_aspect: Optional[VideoAspect] = VideoAspect.portrait.value
     video_resolution: Optional[VideoResolution] = VideoResolution.hd_720p.value
@@ -92,6 +93,7 @@ class VideoParams(BaseModel):
     video_transition_mode: Optional[VideoTransitionMode] = None
     video_clip_duration: Optional[int] = 5
     video_count: Optional[int] = 1
+    target_duration: Optional[int] = None  # Target duration for the final video in seconds
 
     video_source: Optional[str] = "pexels"
     video_materials: Optional[List[MaterialInfo]] = (
@@ -122,7 +124,7 @@ class VideoParams(BaseModel):
 
 
 class SubtitleRequest(BaseModel):
-    video_script: str
+    voice_over_script: str
     video_language: Optional[str] = ""
     voice_name: Optional[str] = "zh-CN-XiaoxiaoNeural-Female"
     voice_volume: Optional[float] = 1.0
@@ -142,7 +144,7 @@ class SubtitleRequest(BaseModel):
 
 
 class AudioRequest(BaseModel):
-    video_script: str
+    voice_over_script: str
     video_language: Optional[str] = ""
     voice_name: Optional[str] = "zh-CN-XiaoxiaoNeural-Female"
     voice_volume: Optional[float] = 1.0
