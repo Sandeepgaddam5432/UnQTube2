@@ -68,6 +68,8 @@ if "video_subject" not in st.session_state:
     st.session_state["video_subject"] = ""
 if "video_script" not in st.session_state:
     st.session_state["video_script"] = ""
+if "voice_over_script" not in st.session_state:
+    st.session_state["voice_over_script"] = ""
 if "video_terms" not in st.session_state:
     st.session_state["video_terms"] = ""
 if "ui_language" not in st.session_state:
@@ -748,12 +750,15 @@ with tabs[0]:
     
     # Display script in a larger area
     st.subheader(tr("Video Script"))
-    params.video_script = st.text_area(
+    params.voice_over_script = st.text_area(
         "",
         value=st.session_state["video_script"],
         height=250,
         placeholder=tr("Your script will appear here. You can also write your own script.")
     )
+    # Update both session state keys for backward compatibility
+    st.session_state["video_script"] = params.voice_over_script
+    st.session_state["voice_over_script"] = params.voice_over_script
     
     # Keywords section
     st.subheader(tr("Video Keywords"))
@@ -772,11 +777,11 @@ with tabs[0]:
             key="auto_generate_terms",
             use_container_width=True
         ):
-            if not params.video_script:
+            if not params.voice_over_script:
                 st.error(tr("Please Enter the Video Script"))
             else:
                 with st.spinner(tr("Generating Video Keywords...")):
-                    terms = llm.generate_terms(params.video_subject, params.video_script)
+                    terms = llm.generate_terms(params.video_subject, params.voice_over_script)
                     if "Error: " in terms:
                         st.error(tr(terms))
                     else:
@@ -1052,7 +1057,7 @@ with tabs[2]:
     # Check required fields and show warnings if needed
     warning_shown = False
     
-    if not params.video_subject and not params.video_script:
+    if not params.video_subject and not params.voice_over_script:
         st.warning("⚠️ " + tr("You need to provide either a video subject or a script"))
         warning_shown = True
     
@@ -1082,7 +1087,7 @@ if start_button:
     task_id = str(uuid4())
         
     # Double check requirements
-    if not params.video_subject and not params.video_script:
+    if not params.video_subject and not params.voice_over_script:
         st.error(tr("Video Script and Subject Cannot Both Be Empty"))
         scroll_to_bottom()
         st.stop()
