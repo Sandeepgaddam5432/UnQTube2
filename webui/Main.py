@@ -656,13 +656,12 @@ with main_container:
     # Save subject to session state for persistence
     st.session_state["video_subject"] = params.video_subject
 
-    # 2. Duration slider - the second main control
-    target_duration = st.slider(
+    # 2. Duration input - the second main control (now using number_input instead of slider)
+    target_duration = st.number_input(
         "2. " + tr("Set Target Duration (seconds)"),
-        min_value=10,
-        max_value=180,
+        min_value=1,
         value=60,
-        step=10
+        step=1
     )
     params.target_duration = target_duration if target_duration > 0 else None
 
@@ -935,22 +934,23 @@ with st.expander("🔧 " + tr("Advanced Customization (Optional)"), expanded=Fal
             # Get the selected background music type
             params.bgm_type = bgm_options[selected_index][1]
 
-            # Advanced BGM settings in expander
-            with st.expander(tr("Background Music (BGM) Settings"), expanded=False):
-                # Show or hide components based on the selection
-                if params.bgm_type == "custom":
-                    custom_bgm_file = st.text_input(
-                        tr("Custom Background Music File"), key="custom_bgm_file_input"
-                    )
-                    if custom_bgm_file and os.path.exists(custom_bgm_file):
-                        params.bgm_file = custom_bgm_file
-                        st.success(f"✅ {tr('Custom music selected')}: **{custom_bgm_file}**")
-
-                params.bgm_volume = st.select_slider(
-                    tr("Background Music Volume"),
-                    options=[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
-                    value=0.2
+            # Advanced BGM settings - using subheader instead of expander
+            st.subheader(tr("Background Music (BGM) Settings"))
+            
+            # Show or hide components based on the selection
+            if params.bgm_type == "custom":
+                custom_bgm_file = st.text_input(
+                    tr("Custom Background Music File"), key="custom_bgm_file_input"
                 )
+                if custom_bgm_file and os.path.exists(custom_bgm_file):
+                    params.bgm_file = custom_bgm_file
+                    st.success(f"✅ {tr('Custom music selected')}: **{custom_bgm_file}**")
+
+            params.bgm_volume = st.select_slider(
+                tr("Background Music Volume"),
+                options=[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+                value=0.2
+            )
 
             # Subtitle settings
             st.subheader(tr("Subtitle Settings"))
@@ -1012,14 +1012,15 @@ with st.expander("🔧 " + tr("Advanced Customization (Optional)"), expanded=Fal
                 if current_language in language_font_recommendations and params.font_name != language_font_recommendations[current_language]:
                     st.info(f"Tip: For {current_language}, we recommend using {language_font_recommendations[current_language]} for best results.")
 
-                # Advanced subtitle settings in expander
-                with st.expander(tr("Advanced Subtitle Settings"), expanded=False):
-                    subtitle_positions = [
-                        (tr("Top"), "top"),
-                        (tr("Center"), "center"),
-                        (tr("Bottom"), "bottom"),
-                        (tr("Custom"), "custom"),
-                    ]
+                # Advanced subtitle settings - using subheader instead of expander
+                st.subheader(tr("Advanced Subtitle Settings"))
+                
+                subtitle_positions = [
+                    (tr("Top"), "top"),
+                    (tr("Center"), "center"),
+                    (tr("Bottom"), "bottom"),
+                    (tr("Custom"), "custom"),
+                ]
                     selected_index = st.selectbox(
                         tr("Position"),
                         index=2,
