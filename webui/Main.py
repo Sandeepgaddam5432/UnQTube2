@@ -52,6 +52,13 @@ h1 {
 .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p {
     font-size: 1.15rem;
 }
+.main-title {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+.generate-btn {
+    margin-top: 2rem;
+}
 </style>
 """
 st.markdown(streamlit_style, unsafe_allow_html=True)
@@ -629,498 +636,507 @@ with st.sidebar:
     config.app["hide_config"] = hide_config
 
 # MAIN CONTENT AREA
-# Create tabs for the main workflow
-tabs = st.tabs(["📝 " + tr("Script"), "🔍 " + tr("Settings"), "🎥 " + tr("Video")])
+# Initialize parameters
+params = VideoParams(video_subject="")
 
-# Tab 1: Script
-with tabs[0]:
-    # Video Subject Input
-    st.subheader(tr("Video Subject"))
-    params = VideoParams(video_subject="")
+# Simplified Main UI - Two-Click Philosophy
+st.markdown("<h1 class='main-title'>UnQTube2 Video Creator</h1>", unsafe_allow_html=True)
+
+# Create a nice card-like container for the main UI
+main_container = st.container()
+with main_container:
+    # 1. Subject Input - the primary input field
     params.video_subject = st.text_input(
-        tr("Enter a topic or keyword for your video"),
+        "1. " + tr("Enter Your Video Subject"),
         value=st.session_state["video_subject"],
         key="video_subject_input",
         placeholder=tr("Example: Benefits of meditation")
     ).strip()
 
-    # Script language selection
-    support_locales = [
-        "zh-CN", "zh-HK", "zh-TW", "de-DE", "en-US", "fr-FR", "vi-VN", "th-TH",
-        # Added Indian languages
-        "hi-IN", "te-IN", "ta-IN", "kn-IN", "bn-IN", "mr-IN", "gu-IN", "ml-IN", "pa-IN",
-    ]
-    
-    col1, col2 = st.columns([1, 3])
-    
-    with col1:
-        video_languages = [
-            (tr("Auto Detect"), ""),
-        ]
-        # Add language display names for Indian languages
-        language_display_names = {
-            "hi-IN": "Hindi (हिन्दी)",
-            "te-IN": "Telugu (తెలుగు)",
-            "ta-IN": "Tamil (தமிழ்)",
-            "kn-IN": "Kannada (ಕನ್ನಡ)",
-            "bn-IN": "Bengali (বাংলা)",
-            "mr-IN": "Marathi (मराठी)",
-            "gu-IN": "Gujarati (ગુજરાતી)",
-            "ml-IN": "Malayalam (മലയാളം)",
-            "pa-IN": "Punjabi (ਪੰਜਾਬੀ)"
-        }
-        
-        for locale in support_locales:
-            # Use special display names for Indian languages
-            if locale in language_display_names:
-                display_name = language_display_names[locale]
-            else:
-                display_name = locale
-            video_languages.append((display_name, locale))
-        
-        selected_language_index = 0
-        saved_language = config.ui.get("video_language", "")
-        for i, (_, lang_code) in enumerate(video_languages):
-            if lang_code == saved_language:
-                selected_language_index = i
-                break
-        
-        selected_language_option = st.selectbox(
-            tr("Script Language"),
-            options=range(len(video_languages)),
-            format_func=lambda x: video_languages[x][0],
-            index=selected_language_index,
-            key="selected_language"
-        )
-        selected_language = video_languages[selected_language_option][1]
-        config.ui["video_language"] = selected_language
-        params.video_language = selected_language
-        
-        # Add hybrid language mode checkbox
-        hybrid_mode = False
-        if selected_language and not selected_language.startswith("en"):
-            hybrid_mode = st.checkbox(
-                tr("Hybrid Language Mode"),
-                value=False,
-                help=tr("Generate voice-over in selected language but subtitles in English")
-            )
-            
-            if hybrid_mode:
-                st.info(tr("Hybrid mode enabled: Voice-over will be in the selected language, subtitles will be in English."))
-    
-    with col2:
-        # Video subject input
-        video_subject = st.text_area(
-            tr("Video Subject"),
-            value=st.session_state.get("video_subject", ""),
-            height=100,
-            placeholder=tr("Enter the subject of your video here..."),
-            help=tr("This is the main topic or subject of your video. Be specific for better results."),
-        )
-        st.session_state["video_subject"] = video_subject
-        params.video_subject = video_subject
+    # Save subject to session state for persistence
+    st.session_state["video_subject"] = params.video_subject
 
-        # Video script input - renamed to voice_over_script
-        voice_over_script = st.text_area(
-            tr("Voice-over Script"),
-            value=st.session_state.get("video_script", ""),  # Backward compatibility with old session state key
-            height=150,
-            placeholder=tr("Enter your script here, or leave blank to auto-generate..."),
-            help=tr("This is the script that will be used for the voice-over. Leave blank to auto-generate."),
-        )
-        # Update both the old and new session state keys for backward compatibility
-        st.session_state["video_script"] = voice_over_script
-        st.session_state["voice_over_script"] = voice_over_script
-        params.voice_over_script = voice_over_script
-        
-        # Subtitle script input - only show in hybrid mode
-        if hybrid_mode:
-            subtitle_script = st.text_area(
-                tr("Subtitle Script (English)"),
-                value=st.session_state.get("subtitle_script", ""),
-                height=150,
-                placeholder=tr("Enter English subtitle script here, or leave blank to auto-generate..."),
-                help=tr("This script will be used for subtitles. Leave blank to auto-generate English subtitles."),
-            )
-            st.session_state["subtitle_script"] = subtitle_script
-            params.subtitle_script = subtitle_script
-        else:
-            # In non-hybrid mode, subtitle script is the same as voice-over script
-            params.subtitle_script = ""  # Will use voice_over_script by default in the backend
-    
-    # Display script in a larger area
-    st.subheader(tr("Video Script"))
-    params.voice_over_script = st.text_area(
-        "",
-        value=st.session_state["video_script"],
-        height=250,
-        placeholder=tr("Your script will appear here. You can also write your own script.")
+    # 2. Duration slider - the second main control
+    target_duration = st.slider(
+        "2. " + tr("Set Target Duration (seconds)"),
+        min_value=10,
+        max_value=180,
+        value=60,
+        step=10
     )
-    # Update both session state keys for backward compatibility
-    st.session_state["video_script"] = params.voice_over_script
-    st.session_state["voice_over_script"] = params.voice_over_script
-    
-    # Keywords section
-    st.subheader(tr("Video Keywords"))
-    col1, col2 = st.columns([3, 1])
-    
-    with col1:
-        params.video_terms = st.text_area(
-            "",
-            value=st.session_state["video_terms"],
-            placeholder=tr("Keywords help find relevant video materials")
-        )
-    
-    with col2:
-        if st.button(
-            "🔍 " + tr("Generate Keywords"), 
-            key="auto_generate_terms",
-            use_container_width=True
-        ):
-            if not params.voice_over_script:
-                st.error(tr("Please Enter the Video Script"))
-            else:
-                with st.spinner(tr("Generating Video Keywords...")):
-                    terms = llm.generate_terms(params.video_subject, params.voice_over_script)
-                    if "Error: " in terms:
-                        st.error(tr(terms))
-                    else:
-                        st.session_state["video_terms"] = ", ".join(terms)
-                        st.success(tr("Keywords generated successfully!"))
+    params.target_duration = target_duration if target_duration > 0 else None
 
-# Tab 2: Settings
-with tabs[1]:
-    col1, col2 = st.columns(2)
+    # 3. Generate button - large and prominent
+    st.markdown("<div class='generate-btn'>", unsafe_allow_html=True)
+    start_button = st.button(
+        "🎬 " + tr("Generate Video"), 
+        use_container_width=True,
+        type="primary",
+        key="main_generate_button"
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# Progress information area for displaying generation progress
+log_container = st.empty()
+
+# Advanced Customization Expander - closed by default
+with st.expander("🔧 " + tr("Advanced Customization (Optional)"), expanded=False):
+    # Create tabs for organizing the advanced settings
+    adv_tabs = st.tabs(["📝 " + tr("Script"), "🔍 " + tr("Settings"), "🎥 " + tr("Video")])
     
-    with col1:
-        # Video settings
-        st.subheader(tr("Video Settings"))
+    # Tab 1: Script Options
+    with adv_tabs[0]:
+        # Script language selection
+        support_locales = [
+            "zh-CN", "zh-HK", "zh-TW", "de-DE", "en-US", "fr-FR", "vi-VN", "th-TH",
+            # Added Indian languages
+            "hi-IN", "te-IN", "ta-IN", "kn-IN", "bn-IN", "mr-IN", "gu-IN", "ml-IN", "pa-IN",
+        ]
         
-        video_sources = [
-            (tr("Pexels"), "pexels"),
-            (tr("Pixabay"), "pixabay"),
-            (tr("Local file"), "local"),
-            (tr("TikTok"), "douyin"),
-            (tr("Bilibili"), "bilibili"),
-            (tr("Xiaohongshu"), "xiaohongshu"),
-        ]
-
-        saved_video_source_name = config.app.get("video_source", "pexels")
-        saved_video_source_index = [v[1] for v in video_sources].index(
-            saved_video_source_name
-        )
-
-        selected_index = st.selectbox(
-            tr("Video Source"),
-            options=range(len(video_sources)),
-            format_func=lambda x: video_sources[x][0],
-            index=saved_video_source_index,
-        )
-        params.video_source = video_sources[selected_index][1]
-        config.app["video_source"] = params.video_source
-
-        if params.video_source == "local":
-            uploaded_files = st.file_uploader(
-                tr("Upload Local Files"),
-                type=["mp4", "mov", "avi", "flv", "mkv", "jpg", "jpeg", "png"],
-                accept_multiple_files=True,
-            )
-
-        video_aspect_ratios = [
-            (tr("Portrait") + " (9:16)", VideoAspect.portrait.value),
-            (tr("Landscape") + " (16:9)", VideoAspect.landscape.value),
-        ]
-        selected_index = st.selectbox(
-            tr("Video Ratio"),
-            options=range(len(video_aspect_ratios)),
-            format_func=lambda x: video_aspect_ratios[x][0],
-        )
-        params.video_aspect = VideoAspect(video_aspect_ratios[selected_index][1])
-
-        # Add video resolution options
-        video_resolutions = [
-            (tr("HD") + " (720p)", VideoResolution.hd_720p.value),
-            (tr("Full HD") + " (1080p)", VideoResolution.full_hd.value),
-            (tr("Ultra HD") + " (4K)", VideoResolution.ultra_hd.value),
-        ]
-        selected_index = st.selectbox(
-            tr("Video Resolution"),
-            options=range(len(video_resolutions)),
-            format_func=lambda x: video_resolutions[x][0],
-        )
-        params.video_resolution = VideoResolution(video_resolutions[selected_index][1])
-
-        video_concat_modes = [
-            (tr("Sequential"), "sequential"),
-            (tr("Random"), "random"),
-        ]
-        selected_index = st.selectbox(
-            tr("Video Concat Mode"),
-            options=range(len(video_concat_modes)),
-            format_func=lambda x: video_concat_modes[x][0],
-            index=1,
-        )
-        params.video_concat_mode = VideoConcatMode(
-            video_concat_modes[selected_index][1]
-        )
-
-        # Video transition mode
-        video_transition_modes = [
-            (tr("None"), VideoTransitionMode.none.value),
-            (tr("Shuffle"), VideoTransitionMode.shuffle.value),
-            (tr("FadeIn"), VideoTransitionMode.fade_in.value),
-            (tr("FadeOut"), VideoTransitionMode.fade_out.value),
-            (tr("SlideIn"), VideoTransitionMode.slide_in.value),
-            (tr("SlideOut"), VideoTransitionMode.slide_out.value),
-        ]
-        selected_index = st.selectbox(
-            tr("Video Transition Mode"),
-            options=range(len(video_transition_modes)),
-            format_func=lambda x: video_transition_modes[x][0],
-            index=0,
-        )
-        params.video_transition_mode = VideoTransitionMode(
-            video_transition_modes[selected_index][1]
-        )
-
-        cols = st.columns(2)
-        with cols[0]:
-            params.video_clip_duration = st.select_slider(
-                tr("Clip Duration (seconds)"), 
-                options=[2, 3, 4, 5, 6, 7, 8, 9, 10],
-                value=3
-            )
-        with cols[1]:
-            params.video_count = st.select_slider(
-                tr("Videos to Generate"),
-                options=[1, 2, 3, 4, 5],
-                value=1
-            )
-            
-        # Add target duration field
-        with st.expander(tr("Advanced Video Settings"), expanded=False):
-            target_duration = st.slider(
-                tr("Target Video Duration (seconds)"),
-                min_value=10,
-                max_value=180,
-                value=60,
-                step=10,
-                help=tr("Set a specific target duration for the final video. The system will try to match this duration by adjusting clips.")
-            )
-            params.target_duration = target_duration if target_duration > 0 else None
-
-    with col2:
-        # Background music settings
-        st.subheader(tr("Audio Settings"))
-
-        # Basic BGM setting
-        bgm_options = [
-            (tr("No Background Music"), ""),
-            (tr("Random Background Music"), "random"),
-            (tr("Custom Background Music"), "custom"),
-        ]
-        selected_index = st.selectbox(
-            tr("Background Music"),
-            index=1,
-            options=range(len(bgm_options)),
-            format_func=lambda x: bgm_options[x][0],
-        )
-        # Get the selected background music type
-        params.bgm_type = bgm_options[selected_index][1]
-
-        # Advanced BGM settings in expander
-        with st.expander(tr("Background Music (BGM) Settings"), expanded=False):
-            # Show or hide components based on the selection
-            if params.bgm_type == "custom":
-                custom_bgm_file = st.text_input(
-                    tr("Custom Background Music File"), key="custom_bgm_file_input"
-                )
-                if custom_bgm_file and os.path.exists(custom_bgm_file):
-                    params.bgm_file = custom_bgm_file
-                    st.success(f"✅ {tr('Custom music selected')}: **{custom_bgm_file}**")
-
-            params.bgm_volume = st.select_slider(
-                tr("Background Music Volume"),
-                options=[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
-                value=0.2
-            )
-
-        # Subtitle settings
-        st.subheader(tr("Subtitle Settings"))
-        params.subtitle_enabled = st.checkbox(tr("Enable Subtitles"), value=True)
+        col1, col2 = st.columns([1, 3])
         
-        if params.subtitle_enabled:
-            # Basic subtitle settings
-            font_names = get_all_fonts()
-            
-            # Map language codes to recommended fonts
-            language_font_recommendations = {
-                "hi-IN": "NotoSansDevanagari-Regular.ttf",  # Hindi
-                "te-IN": "NotoSansTelugu-Regular.ttf",      # Telugu
-                "ta-IN": "NotoSansTamil-Regular.ttf",       # Tamil
-                "kn-IN": "NotoSansKannada-Regular.ttf",     # Kannada
-                "bn-IN": "NotoSansBengali-Regular.ttf",     # Bengali
-                "mr-IN": "NotoSansDevanagari-Regular.ttf",  # Marathi
-                "gu-IN": "NotoSansGujarati-Regular.ttf",    # Gujarati
-                "ml-IN": "NotoSansMalayalam-Regular.ttf",   # Malayalam
-                "pa-IN": "NotoSansGurmukhi-Regular.ttf",    # Punjabi
+        with col1:
+            video_languages = [
+                (tr("Auto Detect"), ""),
+            ]
+            # Add language display names for Indian languages
+            language_display_names = {
+                "hi-IN": "Hindi (हिन्दी)",
+                "te-IN": "Telugu (తెలుగు)",
+                "ta-IN": "Tamil (தமிழ்)",
+                "kn-IN": "Kannada (ಕನ್ನಡ)",
+                "bn-IN": "Bengali (বাংলা)",
+                "mr-IN": "Marathi (मराठी)",
+                "gu-IN": "Gujarati (ગુજરાતી)",
+                "ml-IN": "Malayalam (മലയാളം)",
+                "pa-IN": "Punjabi (ਪੰਜਾਬੀ)"
             }
             
-            # Get current language selected
-            current_language = params.video_language
+            for locale in support_locales:
+                # Use special display names for Indian languages
+                if locale in language_display_names:
+                    display_name = language_display_names[locale]
+                else:
+                    display_name = locale
+                video_languages.append((display_name, locale))
             
-            # Determine the recommended font based on language
-            recommended_font = None
-            if current_language in language_font_recommendations:
-                recommended_font = language_font_recommendations[current_language]
+            selected_language_index = 0
+            saved_language = config.ui.get("video_language", "")
+            for i, (_, lang_code) in enumerate(video_languages):
+                if lang_code == saved_language:
+                    selected_language_index = i
+                    break
             
-            # Get the saved font name from config or use the recommended font for the selected language
-            saved_font_name = config.ui.get("font_name", "MicrosoftYaHeiBold.ttc")
-            
-            # If we have a recommended font for this language and it's in our font list, use it
-            if recommended_font and recommended_font in font_names:
-                saved_font_name = recommended_font
-                
-            saved_font_name_index = 0
-            if saved_font_name in font_names:
-                saved_font_name_index = font_names.index(saved_font_name)
-                
-            # Create font options with recommendations for Indian languages
-            font_options = font_names.copy()
-            font_format_func = lambda x: x
-            
-            # If we have an Indian language selected, modify the display function to mark recommended fonts
-            if current_language in language_font_recommendations:
-                font_format_func = lambda x: f"{x} ✓ (Recommended)" if x == language_font_recommendations[current_language] else x
-            
-            params.font_name = st.selectbox(
-                tr("Font"),
-                options=font_options,
-                index=saved_font_name_index,
-                format_func=font_format_func
+            selected_language_option = st.selectbox(
+                tr("Script Language"),
+                options=range(len(video_languages)),
+                format_func=lambda x: video_languages[x][0],
+                index=selected_language_index,
+                key="selected_language"
             )
-            config.ui["font_name"] = params.font_name
+            selected_language = video_languages[selected_language_option][1]
+            config.ui["video_language"] = selected_language
+            params.video_language = selected_language
             
-            # If an Indian language is selected but not using the recommended font, show a hint
-            if current_language in language_font_recommendations and params.font_name != language_font_recommendations[current_language]:
-                st.info(f"Tip: For {current_language}, we recommend using {language_font_recommendations[current_language]} for best results.")
-
-            # Advanced subtitle settings in expander
-            with st.expander(tr("Advanced Subtitle Settings"), expanded=False):
-                subtitle_positions = [
-                    (tr("Top"), "top"),
-                    (tr("Center"), "center"),
-                    (tr("Bottom"), "bottom"),
-                    (tr("Custom"), "custom"),
-                ]
-                selected_index = st.selectbox(
-                    tr("Position"),
-                    index=2,
-                    options=range(len(subtitle_positions)),
-                    format_func=lambda x: subtitle_positions[x][0],
+            # Add hybrid language mode checkbox
+            hybrid_mode = False
+            if selected_language and not selected_language.startswith("en"):
+                hybrid_mode = st.checkbox(
+                    tr("Hybrid Language Mode"),
+                    value=False,
+                    help=tr("Generate voice-over in selected language but subtitles in English")
                 )
-                params.subtitle_position = subtitle_positions[selected_index][1]
-
-                if params.subtitle_position == "custom":
-                    custom_position = st.slider(
-                        tr("Position (% from top)"), 
-                        min_value=0,
-                        max_value=100,
-                        value=70,
-                        step=5
-                    )
-                    params.custom_position = float(custom_position)
-
-                font_cols = st.columns(2)
-                with font_cols[0]:
-                    saved_text_fore_color = config.ui.get("text_fore_color", "#FFFFFF")
-                    params.text_fore_color = st.color_picker(
-                        tr("Font Color"), saved_text_fore_color
-                    )
-                    config.ui["text_fore_color"] = params.text_fore_color
-
-                with font_cols[1]:
-                    saved_font_size = config.ui.get("font_size", 60)
-                    params.font_size = st.slider(tr("Font Size"), 30, 100, saved_font_size)
-                    config.ui["font_size"] = params.font_size
-
-                stroke_cols = st.columns(2)
-                with stroke_cols[0]:
-                    params.stroke_color = st.color_picker(tr("Stroke Color"), "#000000")
-                with stroke_cols[1]:
-                    params.stroke_width = st.slider(tr("Stroke Width"), 0.0, 10.0, 1.5)
-
-# Tab 3: Video Generation
-with tabs[2]:
-    st.subheader(tr("Generate Your Video"))
-    
-    # Check required fields and show warnings if needed
-    warning_shown = False
-    
-    if not params.video_subject and not params.voice_over_script:
-        st.warning("⚠️ " + tr("You need to provide either a video subject or a script"))
-        warning_shown = True
-    
-    if params.video_source == "pexels" and not config.app.get("pexels_api_keys", ""):
-        st.warning("⚠️ " + tr("Pexels API Key is required for Pexels video source"))
-        warning_shown = True
+                
+                if hybrid_mode:
+                    st.info(tr("Hybrid mode enabled: Voice-over will be in the selected language, subtitles will be in English."))
         
-    if params.video_source == "pixabay" and not config.app.get("pixabay_api_keys", ""):
-        st.warning("⚠️ " + tr("Pixabay API Key is required for Pixabay video source"))
-        warning_shown = True
-    
-    # Generate button with proper spacing
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        start_button = st.button(
-            "🎬 " + tr("Generate Video"), 
-            use_container_width=True, 
-            type="primary",
-            disabled=warning_shown
-        )
+        with col2:
+            # Custom Voice-over Script - renamed to make it clear this is an override
+            voice_over_script = st.text_area(
+                tr("Custom Voice-over Script"),
+                value=st.session_state.get("voice_over_script", ""),
+                height=150,
+                placeholder=tr("Enter your custom voice-over script here, or leave blank to auto-generate..."),
+                help=tr("This is an optional custom script that will be used for the voice-over. Leave blank to auto-generate from the video subject."),
+            )
+            # Update both the old and new session state keys for backward compatibility
+            st.session_state["video_script"] = voice_over_script
+            st.session_state["voice_over_script"] = voice_over_script
+            params.voice_over_script = voice_over_script
+            
+            # Custom Subtitle script input - only show in hybrid mode
+            if hybrid_mode:
+                subtitle_script = st.text_area(
+                    tr("Custom Subtitle Script (English)"),
+                    value=st.session_state.get("subtitle_script", ""),
+                    height=150,
+                    placeholder=tr("Enter English subtitle script here, or leave blank to auto-generate..."),
+                    help=tr("This custom script will be used for subtitles. Leave blank to auto-generate English subtitles."),
+                )
+                st.session_state["subtitle_script"] = subtitle_script
+                params.subtitle_script = subtitle_script
+            else:
+                # In non-hybrid mode, subtitle script is the same as voice-over script
+                params.subtitle_script = ""  # Will use voice_over_script by default in the backend
+        
+        # Keywords section
+        st.subheader(tr("Video Keywords"))
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            params.video_terms = st.text_area(
+                tr("Custom Keywords"),
+                value=st.session_state["video_terms"],
+                placeholder=tr("Keywords help find relevant video materials")
+            )
+        
+        with col2:
+            if st.button(
+                "🔍 " + tr("Generate Keywords"), 
+                key="auto_generate_terms",
+                use_container_width=True
+            ):
+                if not params.voice_over_script and not params.video_subject:
+                    st.error(tr("Please Enter the Video Subject or Script"))
+                else:
+                    with st.spinner(tr("Generating Video Keywords...")):
+                        terms = llm.generate_terms(params.video_subject, params.voice_over_script)
+                        if "Error: " in terms:
+                            st.error(tr(terms))
+                        else:
+                            st.session_state["video_terms"] = ", ".join(terms)
+                            st.success(tr("Keywords generated successfully!"))
 
-    # Progress information area
-    log_container = st.empty()
+    # Tab 2: Settings
+    with adv_tabs[1]:
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Video settings
+            st.subheader(tr("Video Settings"))
+            
+            video_sources = [
+                (tr("Pexels"), "pexels"),
+                (tr("Pixabay"), "pixabay"),
+                (tr("Local file"), "local"),
+                (tr("TikTok"), "douyin"),
+                (tr("Bilibili"), "bilibili"),
+                (tr("Xiaohongshu"), "xiaohongshu"),
+            ]
+
+            saved_video_source_name = config.app.get("video_source", "pexels")
+            saved_video_source_index = [v[1] for v in video_sources].index(
+                saved_video_source_name
+            )
+
+            selected_index = st.selectbox(
+                tr("Video Source"),
+                options=range(len(video_sources)),
+                format_func=lambda x: video_sources[x][0],
+                index=saved_video_source_index,
+            )
+            params.video_source = video_sources[selected_index][1]
+            config.app["video_source"] = params.video_source
+
+            if params.video_source == "local":
+                uploaded_files = st.file_uploader(
+                    tr("Upload Local Files"),
+                    type=["mp4", "mov", "avi", "flv", "mkv", "jpg", "jpeg", "png"],
+                    accept_multiple_files=True,
+                )
+
+            video_aspect_ratios = [
+                (tr("Portrait") + " (9:16)", VideoAspect.portrait.value),
+                (tr("Landscape") + " (16:9)", VideoAspect.landscape.value),
+            ]
+            selected_index = st.selectbox(
+                tr("Video Ratio"),
+                options=range(len(video_aspect_ratios)),
+                format_func=lambda x: video_aspect_ratios[x][0],
+            )
+            params.video_aspect = VideoAspect(video_aspect_ratios[selected_index][1])
+
+            # Add video resolution options
+            video_resolutions = [
+                (tr("HD") + " (720p)", VideoResolution.hd_720p.value),
+                (tr("Full HD") + " (1080p)", VideoResolution.full_hd.value),
+                (tr("Ultra HD") + " (4K)", VideoResolution.ultra_hd.value),
+            ]
+            selected_index = st.selectbox(
+                tr("Video Resolution"),
+                options=range(len(video_resolutions)),
+                format_func=lambda x: video_resolutions[x][0],
+            )
+            params.video_resolution = VideoResolution(video_resolutions[selected_index][1])
+
+            video_concat_modes = [
+                (tr("Sequential"), "sequential"),
+                (tr("Random"), "random"),
+            ]
+            selected_index = st.selectbox(
+                tr("Video Concat Mode"),
+                options=range(len(video_concat_modes)),
+                format_func=lambda x: video_concat_modes[x][0],
+                index=1,
+            )
+            params.video_concat_mode = VideoConcatMode(
+                video_concat_modes[selected_index][1]
+            )
+
+            # Video transition mode
+            video_transition_modes = [
+                (tr("None"), VideoTransitionMode.none.value),
+                (tr("Shuffle"), VideoTransitionMode.shuffle.value),
+                (tr("FadeIn"), VideoTransitionMode.fade_in.value),
+                (tr("FadeOut"), VideoTransitionMode.fade_out.value),
+                (tr("SlideIn"), VideoTransitionMode.slide_in.value),
+                (tr("SlideOut"), VideoTransitionMode.slide_out.value),
+            ]
+            selected_index = st.selectbox(
+                tr("Video Transition Mode"),
+                options=range(len(video_transition_modes)),
+                format_func=lambda x: video_transition_modes[x][0],
+                index=0,
+            )
+            params.video_transition_mode = VideoTransitionMode(
+                video_transition_modes[selected_index][1]
+            )
+
+            cols = st.columns(2)
+            with cols[0]:
+                params.video_clip_duration = st.select_slider(
+                    tr("Clip Duration (seconds)"), 
+                    options=[2, 3, 4, 5, 6, 7, 8, 9, 10],
+                    value=3
+                )
+            with cols[1]:
+                params.video_count = st.select_slider(
+                    tr("Videos to Generate"),
+                    options=[1, 2, 3, 4, 5],
+                    value=1
+                )
+
+        with col2:
+            # Background music settings
+            st.subheader(tr("Audio Settings"))
+
+            # Basic BGM setting
+            bgm_options = [
+                (tr("No Background Music"), ""),
+                (tr("Random Background Music"), "random"),
+                (tr("Custom Background Music"), "custom"),
+            ]
+            selected_index = st.selectbox(
+                tr("Background Music"),
+                index=1,
+                options=range(len(bgm_options)),
+                format_func=lambda x: bgm_options[x][0],
+            )
+            # Get the selected background music type
+            params.bgm_type = bgm_options[selected_index][1]
+
+            # Advanced BGM settings in expander
+            with st.expander(tr("Background Music (BGM) Settings"), expanded=False):
+                # Show or hide components based on the selection
+                if params.bgm_type == "custom":
+                    custom_bgm_file = st.text_input(
+                        tr("Custom Background Music File"), key="custom_bgm_file_input"
+                    )
+                    if custom_bgm_file and os.path.exists(custom_bgm_file):
+                        params.bgm_file = custom_bgm_file
+                        st.success(f"✅ {tr('Custom music selected')}: **{custom_bgm_file}**")
+
+                params.bgm_volume = st.select_slider(
+                    tr("Background Music Volume"),
+                    options=[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+                    value=0.2
+                )
+
+            # Subtitle settings
+            st.subheader(tr("Subtitle Settings"))
+            params.subtitle_enabled = st.checkbox(tr("Enable Subtitles"), value=True)
+            
+            if params.subtitle_enabled:
+                # Basic subtitle settings
+                font_names = get_all_fonts()
+                
+                # Map language codes to recommended fonts
+                language_font_recommendations = {
+                    "hi-IN": "NotoSansDevanagari-Regular.ttf",  # Hindi
+                    "te-IN": "NotoSansTelugu-Regular.ttf",      # Telugu
+                    "ta-IN": "NotoSansTamil-Regular.ttf",       # Tamil
+                    "kn-IN": "NotoSansKannada-Regular.ttf",     # Kannada
+                    "bn-IN": "NotoSansBengali-Regular.ttf",     # Bengali
+                    "mr-IN": "NotoSansDevanagari-Regular.ttf",  # Marathi
+                    "gu-IN": "NotoSansGujarati-Regular.ttf",    # Gujarati
+                    "ml-IN": "NotoSansMalayalam-Regular.ttf",   # Malayalam
+                    "pa-IN": "NotoSansGurmukhi-Regular.ttf",    # Punjabi
+                }
+                
+                # Get current language selected
+                current_language = params.video_language
+                
+                # Determine the recommended font based on language
+                recommended_font = None
+                if current_language in language_font_recommendations:
+                    recommended_font = language_font_recommendations[current_language]
+                
+                # Get the saved font name from config or use the recommended font for the selected language
+                saved_font_name = config.ui.get("font_name", "MicrosoftYaHeiBold.ttc")
+                
+                # If we have a recommended font for this language and it's in our font list, use it
+                if recommended_font and recommended_font in font_names:
+                    saved_font_name = recommended_font
+                    
+                saved_font_name_index = 0
+                if saved_font_name in font_names:
+                    saved_font_name_index = font_names.index(saved_font_name)
+                    
+                # Create font options with recommendations for Indian languages
+                font_options = font_names.copy()
+                font_format_func = lambda x: x
+                
+                # If we have an Indian language selected, modify the display function to mark recommended fonts
+                if current_language in language_font_recommendations:
+                    font_format_func = lambda x: f"{x} ✓ (Recommended)" if x == language_font_recommendations[current_language] else x
+                
+                params.font_name = st.selectbox(
+                    tr("Font"),
+                    options=font_options,
+                    index=saved_font_name_index,
+                    format_func=font_format_func
+                )
+                config.ui["font_name"] = params.font_name
+                
+                # If an Indian language is selected but not using the recommended font, show a hint
+                if current_language in language_font_recommendations and params.font_name != language_font_recommendations[current_language]:
+                    st.info(f"Tip: For {current_language}, we recommend using {language_font_recommendations[current_language]} for best results.")
+
+                # Advanced subtitle settings in expander
+                with st.expander(tr("Advanced Subtitle Settings"), expanded=False):
+                    subtitle_positions = [
+                        (tr("Top"), "top"),
+                        (tr("Center"), "center"),
+                        (tr("Bottom"), "bottom"),
+                        (tr("Custom"), "custom"),
+                    ]
+                    selected_index = st.selectbox(
+                        tr("Position"),
+                        index=2,
+                        options=range(len(subtitle_positions)),
+                        format_func=lambda x: subtitle_positions[x][0],
+                    )
+                    params.subtitle_position = subtitle_positions[selected_index][1]
+
+                    if params.subtitle_position == "custom":
+                        custom_position = st.slider(
+                            tr("Position (% from top)"), 
+                            min_value=0,
+                            max_value=100,
+                            value=70,
+                            step=5
+                        )
+                        params.custom_position = float(custom_position)
+
+                    font_cols = st.columns(2)
+                    with font_cols[0]:
+                        saved_text_fore_color = config.ui.get("text_fore_color", "#FFFFFF")
+                        params.text_fore_color = st.color_picker(
+                            tr("Font Color"), saved_text_fore_color
+                        )
+                        config.ui["text_fore_color"] = params.text_fore_color
+
+                    with font_cols[1]:
+                        saved_font_size = config.ui.get("font_size", 60)
+                        params.font_size = st.slider(tr("Font Size"), 30, 100, saved_font_size)
+                        config.ui["font_size"] = params.font_size
+
+                    stroke_cols = st.columns(2)
+                    with stroke_cols[0]:
+                        params.stroke_color = st.color_picker(tr("Stroke Color"), "#000000")
+                    with stroke_cols[1]:
+                        params.stroke_width = st.slider(tr("Stroke Width"), 0.0, 10.0, 1.5)
+
+    # Tab 3: Video Generation (placed in advanced expander but simplified)
+    with adv_tabs[2]:
+        st.subheader(tr("Additional Video Settings"))
+        
+        # Check required fields and show warnings if needed
+        warning_shown = False
+        
+        if params.video_source == "pexels" and not config.app.get("pexels_api_keys", ""):
+            st.warning("⚠️ " + tr("Pexels API Key is required for Pexels video source"))
+            warning_shown = True
+            
+        if params.video_source == "pixabay" and not config.app.get("pixabay_api_keys", ""):
+            st.warning("⚠️ " + tr("Pixabay API Key is required for Pixabay video source"))
+            warning_shown = True
 
 if start_button:
     config.save_config()
     task_id = str(uuid4())
         
-    # Double check requirements
-    if not params.video_subject and not params.voice_over_script:
-        st.error(tr("Video Script and Subject Cannot Both Be Empty"))
+    # Double check requirements - simplified
+    if not params.video_subject:
+        st.error(tr("Please Enter a Video Subject"))
         scroll_to_bottom()
         st.stop()
 
+    # Implement the "Smart" Logic for script generation
+    # Get the value from the advanced settings area if provided, otherwise use auto-generation
+    advanced_script = st.session_state.get("voice_over_script", "").strip()
+    
+    # If advanced script is empty, we'll use the auto-generation flow
+    if not advanced_script:
+        # The params.voice_over_script will be empty, which signals the backend
+        # to auto-generate the script from params.video_subject
+        logger.info(tr("Using automatic script generation from subject"))
+    else:
+        # Use the provided custom script
+        params.voice_over_script = advanced_script
+        logger.info(tr("Using custom script provided in advanced settings"))
+
+    # Further requirements checks
     if params.video_source not in ["pexels", "pixabay", "local"]:
         st.error(tr("Please Select a Valid Video Source"))
         scroll_to_bottom()
         st.stop()
 
     if params.video_source == "pexels" and not config.app.get("pexels_api_keys", ""):
-        st.error(tr("Please Enter the Pexels API Key"))
+        st.error(tr("Please Enter the Pexels API Key in the sidebar"))
         scroll_to_bottom()
         st.stop()
 
     if params.video_source == "pixabay" and not config.app.get("pixabay_api_keys", ""):
-        st.error(tr("Please Enter the Pixabay API Key"))
+        st.error(tr("Please Enter the Pixabay API Key in the sidebar"))
         scroll_to_bottom()
         st.stop()
         
-    # Validate voice selection - Fix for "Invalid voice" crash
-    # voice_from_session is already defined earlier
+    # Smart Voice Auto-Correction
+    # Validate voice selection - Auto-select a default voice if none is selected
+    voice_from_session = st.session_state.get("selected_voice", "")
+    if not voice_from_session and filtered_voices:
+        # Auto-select a voice based on the selected language
+        for v in filtered_voices:
+            language_code = params.video_language if params.video_language else "en-US"
+            if language_code.split('-')[0].lower() in v.lower():
+                voice_from_session = v
+                st.session_state["selected_voice"] = v
+                st.info(f"Auto-selected voice: {v}")
+                break
+        
+        # If no matching voice, use the first available one
+        if not voice_from_session:
+            voice_from_session = filtered_voices[0]
+            st.session_state["selected_voice"] = voice_from_session
+            st.info(f"Auto-selected default voice: {voice_from_session}")
     
-    if not voice_from_session:
-        st.warning(tr("Please select a voice before generating the video."))
-        scroll_to_bottom()
-        st.stop()
-        
     # Set the voice name from session state for video generation
     params.voice_name = voice_from_session
     
     # Handle uploaded files
     uploaded_files = []  # Define this if it wasn't defined in the settings tab
-    if uploaded_files:
+    if 'uploaded_files' in locals() and uploaded_files:
         local_videos_dir = utils.storage_dir("local_videos", create=True)
         for file in uploaded_files:
             file_path = os.path.join(local_videos_dir, f"{file.file_id}_{file.name}")
