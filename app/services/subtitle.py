@@ -82,13 +82,23 @@ def create(audio_file, subtitle_file: str = "", model_size: str = "base"):
 
     for segment in segments:
         words_idx = 0
+        
+        # Fix for TypeError: object of type 'NoneType' has no len()
+        # Some segments may have no words (e.g., silent segments)
+        if segment.words is None:
+            # Handle silent segment by using the segment's start and end times directly
+            if segment.text and segment.text.strip():
+                recognized(segment.text.strip(), segment.start, segment.end)
+            continue
+            
         words_len = len(segment.words)
 
         seg_start = 0
         seg_end = 0
         seg_text = ""
 
-        if segment.words:
+        # Check that segment.words is not None and not empty
+        if segment.words and len(segment.words) > 0:
             is_segmented = False
             for word in segment.words:
                 if not is_segmented:
