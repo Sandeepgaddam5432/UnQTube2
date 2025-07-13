@@ -1021,42 +1021,42 @@ with st.expander("🔧 " + tr("Advanced Customization (Optional)"), expanded=Fal
                     (tr("Bottom"), "bottom"),
                     (tr("Custom"), "custom"),
                 ]
-                    selected_index = st.selectbox(
-                        tr("Position"),
-                        index=2,
-                        options=range(len(subtitle_positions)),
-                        format_func=lambda x: subtitle_positions[x][0],
+                selected_index = st.selectbox(
+                    tr("Position"),
+                    index=2,
+                    options=range(len(subtitle_positions)),
+                    format_func=lambda x: subtitle_positions[x][0],
+                )
+                params.subtitle_position = subtitle_positions[selected_index][1]
+
+                if params.subtitle_position == "custom":
+                    custom_position = st.slider(
+                        tr("Position (% from top)"), 
+                        min_value=0,
+                        max_value=100,
+                        value=70,
+                        step=5
                     )
-                    params.subtitle_position = subtitle_positions[selected_index][1]
+                    params.custom_position = float(custom_position)
 
-                    if params.subtitle_position == "custom":
-                        custom_position = st.slider(
-                            tr("Position (% from top)"), 
-                            min_value=0,
-                            max_value=100,
-                            value=70,
-                            step=5
-                        )
-                        params.custom_position = float(custom_position)
+                font_cols = st.columns(2)
+                with font_cols[0]:
+                    saved_text_fore_color = config.ui.get("text_fore_color", "#FFFFFF")
+                    params.text_fore_color = st.color_picker(
+                        tr("Font Color"), saved_text_fore_color
+                    )
+                    config.ui["text_fore_color"] = params.text_fore_color
 
-                    font_cols = st.columns(2)
-                    with font_cols[0]:
-                        saved_text_fore_color = config.ui.get("text_fore_color", "#FFFFFF")
-                        params.text_fore_color = st.color_picker(
-                            tr("Font Color"), saved_text_fore_color
-                        )
-                        config.ui["text_fore_color"] = params.text_fore_color
+                with font_cols[1]:
+                    saved_font_size = config.ui.get("font_size", 60)
+                    params.font_size = st.slider(tr("Font Size"), 30, 100, saved_font_size)
+                    config.ui["font_size"] = params.font_size
 
-                    with font_cols[1]:
-                        saved_font_size = config.ui.get("font_size", 60)
-                        params.font_size = st.slider(tr("Font Size"), 30, 100, saved_font_size)
-                        config.ui["font_size"] = params.font_size
-
-                    stroke_cols = st.columns(2)
-                    with stroke_cols[0]:
-                        params.stroke_color = st.color_picker(tr("Stroke Color"), "#000000")
-                    with stroke_cols[1]:
-                        params.stroke_width = st.slider(tr("Stroke Width"), 0.0, 10.0, 1.5)
+                stroke_cols = st.columns(2)
+                with stroke_cols[0]:
+                    params.stroke_color = st.color_picker(tr("Stroke Color"), "#000000")
+                with stroke_cols[1]:
+                    params.stroke_width = st.slider(tr("Stroke Width"), 0.0, 10.0, 1.5)
 
     # Tab 3: Video Generation (placed in advanced expander but simplified)
     with adv_tabs[2]:
