@@ -16,7 +16,7 @@ compute_type = config.whisper.get("compute_type", "int8")
 model = None
 
 
-def create(audio_file, subtitle_file: str = ""):
+def create(audio_file, subtitle_file: str = "", model_size: str = "base"):
     global model
     if not model:
         model_path = f"{utils.root_dir()}/models/whisper-{model_size}"

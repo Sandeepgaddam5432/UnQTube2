@@ -143,7 +143,12 @@ def generate_subtitle(task_id, params, subtitle_script, sub_maker, audio_file):
             logger.warning("subtitle file not found, fallback to whisper")
 
     if subtitle_provider == "whisper" or subtitle_fallback:
-        subtitle.create(audio_file=audio_file, subtitle_file=subtitle_path)
+        whisper_model_size = config.app.get("whisper_model_size", "base")
+        subtitle.create(
+            audio_file=audio_file, 
+            subtitle_file=subtitle_path,
+            model_size=whisper_model_size
+        )
         logger.info("\n\n## correcting subtitle")
         subtitle.correct(subtitle_file=subtitle_path, video_script=subtitle_script)
 
