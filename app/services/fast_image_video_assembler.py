@@ -84,12 +84,13 @@ class ImageVideoAssembler:
             y_start, y_end = 0.1 * img_height, -0.1 * img_height
             zoom_start, zoom_end = 1.0, 1.2
         
-        # Build the zoompan filter
+        # Build the zoompan filter with added crop filter to ensure even dimensions
         filter_complex = (
             f"zoompan=z='min(zoom+{(zoom_end-zoom_start)/duration}*on,{zoom_end})':"
             f"x='iw/2-(iw/zoom/2)+{x_start}+({x_end-x_start})*on/{duration}':"
             f"y='ih/2-(ih/zoom/2)+{y_start}+({y_end-y_start})*on/{duration}':"
-            f"d={int(duration*25)}:s={img_width}x{img_height}:fps=25"
+            f"d={int(duration*25)}:s={img_width}x{img_height}:fps=25,"
+            f"crop=trunc(iw/2)*2:trunc(ih/2)*2"  # Ensure dimensions are divisible by 2
         )
         
         # Build FFmpeg command
@@ -184,25 +185,22 @@ class ImageVideoAssembler:
         if progress_callback:
             progress_callback("Assembling final video...", 0.8)
         
-        # Build FFmpeg command to concatenate all clips
+        # Build FFmpeg command to concatenate all clips with correctly specified codecs
         cmd = [
             'ffmpeg', '-y',
             '-f', 'concat',
             '-safe', '0',
             '-i', concat_file,
-            '-c:v', 'libx264'
+            '-c:v', 'libx264'  # Correctly specify video codec
         ]
         
-        # If audio is provided, add it to the command
+        # If audio is provided, add it to the command with correct codec specification
         if audio_path and os.path.exists(audio_path):
             cmd.extend([
                 '-i', audio_path,
-                '-c:a', 'aac',
+                '-c:a', 'aac',  # Correctly specify audio codec
                 '-shortest'  # Ensures video length matches audio length
             ])
-            
-            # Ensure video duration matches audio duration if audio is shorter than target
-            cmd.extend(['-shortest'])
         
         # Add output file
         cmd.append(output_path)
