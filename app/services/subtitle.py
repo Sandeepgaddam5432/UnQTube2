@@ -16,7 +16,7 @@ compute_type = config.whisper.get("compute_type", "int8")
 model = None
 
 
-def create(audio_file, subtitle_file: str = "", model_size: str = "base"):
+def create(audio_file, subtitle_file: str = "", model_size: str = "base", language: str = None):
     global model
     if not model:
         model_path = f"{utils.root_dir()}/models/whisper-{model_size}"
@@ -56,7 +56,7 @@ def create(audio_file, subtitle_file: str = "", model_size: str = "base"):
     segments, info = model.transcribe(
         audio_file,
         beam_size=1,  # Fastest beam search
-        language="en",  # Skip language detection
+        language=language,  # Use provided language or None for auto-detection
         condition_on_previous_text=False,  # Disable context
         word_timestamps=False  # Skip word-level timing
     )

@@ -13,6 +13,7 @@ from app.services import state as sm
 from app.utils import utils
 from app.services.bulletproof_assembler import BulletproofVideoAssembler
 from app.services.progress_estimator import ProgressEstimator, StepEstimate
+from app.services.fast_image_video_assembler import create_image_video_assembler
 
 
 def generate_script(task_id, params):
@@ -147,7 +148,8 @@ def generate_subtitle(task_id, params, subtitle_script, sub_maker, audio_file):
         subtitle.create(
             audio_file=audio_file, 
             subtitle_file=subtitle_path,
-            model_size=whisper_model_size
+            model_size=whisper_model_size,
+            language=params.video_language  # Pass the video language to prevent whisper hallucination
         )
         logger.info("\n\n## correcting subtitle")
         subtitle.correct(subtitle_file=subtitle_path, video_script=subtitle_script)
