@@ -325,10 +325,10 @@ def start(task_id, params: VideoParams, stop_at: str = "video"):
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=40)
 
     # 5. Get video materials
-    downloaded_videos = get_video_materials(
+    downloaded_materials = get_video_materials(
         task_id, params, video_terms, audio_duration
     )
-    if not downloaded_videos:
+    if not downloaded_materials:
         sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
         return
 
@@ -337,67 +337,66 @@ def start(task_id, params: VideoParams, stop_at: str = "video"):
             task_id,
             state=const.TASK_STATE_COMPLETE,
             progress=100,
-            materials=downloaded_videos,
+            materials=downloaded_materials,
         )
-        return {"materials": downloaded_videos}
+        return {"materials": downloaded_materials}
 
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=50)
 
-    # 6. Generate final videos using the new bulletproof assembler
+    # 6. Generate final videos using the new image-to-video assembler
     final_video_paths = []
     combined_video_paths = []
     
-    # Initialize the new assembler
-    temp_dir = path.join(utils.task_dir(task_id), "temp")
-    assembler = BulletproofVideoAssembler(temp_dir=temp_dir)
-    
-    # Define progress steps for the estimator
-    steps = [
-        StepEstimate("video_concatenation", 20.0, 0.4),
-        StepEstimate("audio_addition", 15.0, 0.3),
-        StepEstimate("subtitle_addition", 15.0, 0.3)
-    ]
+    # Get the target duration, default to audio duration if not specified
+    target_duration = params.target_duration if params.target_duration else audio_duration
     
     for i in range(params.video_count):
         index = i + 1
         combined_video_path = path.join(
             utils.task_dir(task_id), f"combined-{index}.mp4"
         )
-        logger.info(f"\n\n## combining video with BULLETPROOF architecture: {index} => {combined_video_path}")
+        logger.info(f"\n\n## creating video from images: {index} => {combined_video_path}")
         
-        # Create progress estimator
-        estimator = ProgressEstimator(steps)
-        
-        # Define progress callback function for the estimator
-        def progress_callback(progress_data):
-            # Calculate overall progress (50% to 75% of total task)
-            progress_percentage = progress_data["progress_percentage"]
-            overall_progress = 50 + (progress_percentage * 0.25 / params.video_count)
-            message = f"{progress_data['current_step']} - {progress_data['eta_formatted']} remaining"
-            logger.info(f"Progress: {message} ({progress_percentage:.1f}%)")
+        # Define progress callback function for video creation
+        def progress_callback(message, progress_value):
+            # Calculate overall progress (50% to 80% of total task)
+            overall_progress = 50 + (progress_value * 30 / params.video_count)
+            logger.info(f"Progress: {message} ({progress_value*100:.1f}%)")
             sm.state.update_task(task_id, progress=int(overall_progress))
         
-        # Set the callback
-        estimator.set_progress_callback(progress_callback)
-        estimator.start_pipeline()
+        # Create an instance of the image video assembler
+        image_assembler = create_image_video_assembler()
         
-        # Start video concatenation
-        estimator.start_step("video_concatenation")
-        # Use the bulletproof assembler for reliable video generation
-        success = assembler.assemble_video_reliable(
-            video_clips=downloaded_videos,
+        # Use the new image-to-video assembly function
+        success = image_assembler.create_video_from_images(
+            image_paths=downloaded_materials,
+            output_path=combined_video_path,
             audio_path=audio_file,
-            subtitle_path=subtitle_path,
-            output_path=combined_video_path
+            target_duration=target_duration,
+            progress_callback=progress_callback,
         )
-        estimator.complete_step("video_concatenation")
         
         if not success:
-            logger.error(f"Failed to generate video {index}")
+            logger.error(f"Failed to generate video {index} from images")
             sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
             return
+        
+        final_video_path = combined_video_path
+        
+        # If subtitles are enabled, add them to the video
+        if params.subtitle_enabled and subtitle_path:
+            final_video_path = path.join(utils.task_dir(task_id), f"final-{index}.mp4")
+            logger.info(f"\n\n## adding subtitles to video: {index} => {final_video_path}")
             
-        final_video_path = combined_video_path  # In this approach, the combined video is the final video
+            video.generate_video(
+                video_path=combined_video_path,
+                audio_path=audio_file,
+                subtitle_path=subtitle_path,
+                output_file=final_video_path,
+                params=params,
+            )
+        
+        sm.state.update_task(task_id, progress=int(80 + (20 * (i+1) / params.video_count)))
         
         final_video_paths.append(final_video_path)
         combined_video_paths.append(combined_video_path)
@@ -418,7 +417,7 @@ def start(task_id, params: VideoParams, stop_at: str = "video"):
         "audio_file": audio_file,
         "audio_duration": audio_duration,
         "subtitle_path": subtitle_path,
-        "materials": downloaded_videos,
+        "materials": downloaded_materials,
     }
     sm.state.update_task(
         task_id, state=const.TASK_STATE_COMPLETE, progress=100, **kwargs
