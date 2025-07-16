@@ -40,6 +40,7 @@ from app.models.schema import (
 from app.services.utils import video_effects
 from app.utils import utils
 from .fast_video_assembler import UltraFastVideoAssembler, VideoGenerationOrchestrator, VideoSegment
+from .fast_image_video_assembler import create_image_video_assembler
 from .breakthrough_optimizer import BreakthroughOptimizer
 
 # Add module-level constants for frequently used imports to avoid NameErrors
@@ -987,3 +988,70 @@ def get_audio_duration(audio_file):
     except Exception as e:
         logger.error(f"Error getting audio duration: {e}")
         return -1
+
+def combine_images_to_video(
+    combined_video_path,
+    image_paths,
+    audio_file,
+    video_aspect=VideoAspect.portrait.value,
+    video_resolution=VideoResolution.hd_720p.value,
+    target_duration=60.0,
+    progress_callback=None,
+):
+    """
+    Create a video from a collection of images with Ken Burns effect
+    
+    Args:
+        combined_video_path: Path to save the combined video
+        image_paths: List of image paths to use
+        audio_file: Path to the audio file
+        video_aspect: Aspect ratio of the video
+        video_resolution: Resolution of the output video
+        target_duration: Target duration for the final video in seconds
+        progress_callback: Callback function for progress updates
+        
+    Returns:
+        Path to the combined video
+    """
+    if not image_paths:
+        logger.error("No image paths provided")
+        return None
+
+    # Get audio duration
+    audio_duration = get_audio_duration(audio_file)
+    if audio_duration <= 0:
+        logger.error(f"Invalid audio duration: {audio_duration}")
+        return None
+
+    # Determine target duration (use audio duration if target_duration is not specified or zero)
+    final_duration = target_duration if target_duration and target_duration > 0 else audio_duration
+    logger.info(f"Target video duration: {final_duration} seconds")
+    
+    # Create output directory if it doesn't exist
+    output_dir = os.path.dirname(combined_video_path)
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Create image video assembler
+    assembler = create_image_video_assembler()
+    
+    # Define a progress wrapper to convert our progress format to the caller's format
+    def progress_wrapper(message, progress):
+        if progress_callback:
+            # Map 0-1 progress to 0-100
+            progress_callback(progress * 100)
+            
+    # Create video from images with Ken Burns effect
+    result = assembler.create_video_from_images(
+        image_paths=image_paths,
+        output_path=combined_video_path,
+        audio_path=audio_file,
+        target_duration=final_duration,
+        progress_callback=progress_wrapper
+    )
+    
+    if result:
+        logger.info(f"Successfully created video from images: {combined_video_path}")
+        return combined_video_path
+    else:
+        logger.error("Failed to create video from images")
+        return None

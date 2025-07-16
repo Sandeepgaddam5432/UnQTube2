@@ -812,7 +812,7 @@ with st.expander("🔧 " + tr("Advanced Customization (Optional)"), expanded=Fal
         
         with col1:
             # Video settings
-            st.subheader(tr("Video Settings"))
+            st.subheader(tr("Image Settings"))
             
             video_sources = [
                 (tr("Pexels"), "pexels"),
@@ -829,7 +829,7 @@ with st.expander("🔧 " + tr("Advanced Customization (Optional)"), expanded=Fal
             )
 
             selected_index = st.selectbox(
-                tr("Video Source"),
+                tr("Image Source"),
                 options=range(len(video_sources)),
                 format_func=lambda x: video_sources[x][0],
                 index=saved_video_source_index,
@@ -840,7 +840,7 @@ with st.expander("🔧 " + tr("Advanced Customization (Optional)"), expanded=Fal
             if params.video_source == "local":
                 uploaded_files = st.file_uploader(
                     tr("Upload Local Files"),
-                    type=["mp4", "mov", "avi", "flv", "mkv", "jpg", "jpeg", "png"],
+                    type=["jpg", "jpeg", "png"],
                     accept_multiple_files=True,
                 )
 
@@ -868,52 +868,14 @@ with st.expander("🔧 " + tr("Advanced Customization (Optional)"), expanded=Fal
             )
             params.video_resolution = VideoResolution(video_resolutions[selected_index][1])
 
-            video_concat_modes = [
-                (tr("Sequential"), "sequential"),
-                (tr("Random"), "random"),
-            ]
-            selected_index = st.selectbox(
-                tr("Video Concat Mode"),
-                options=range(len(video_concat_modes)),
-                format_func=lambda x: video_concat_modes[x][0],
-                index=1,
+            # Remove video concat modes and transition modes as they're not relevant for image-based videos
+            
+            # Keep only the number of videos to generate
+            params.video_count = st.select_slider(
+                tr("Videos to Generate"),
+                options=[1, 2, 3, 4, 5],
+                value=1
             )
-            params.video_concat_mode = VideoConcatMode(
-                video_concat_modes[selected_index][1]
-            )
-
-            # Video transition mode
-            video_transition_modes = [
-                (tr("None"), VideoTransitionMode.none.value),
-                (tr("Shuffle"), VideoTransitionMode.shuffle.value),
-                (tr("FadeIn"), VideoTransitionMode.fade_in.value),
-                (tr("FadeOut"), VideoTransitionMode.fade_out.value),
-                (tr("SlideIn"), VideoTransitionMode.slide_in.value),
-                (tr("SlideOut"), VideoTransitionMode.slide_out.value),
-            ]
-            selected_index = st.selectbox(
-                tr("Video Transition Mode"),
-                options=range(len(video_transition_modes)),
-                format_func=lambda x: video_transition_modes[x][0],
-                index=0,
-            )
-            params.video_transition_mode = VideoTransitionMode(
-                video_transition_modes[selected_index][1]
-            )
-
-            cols = st.columns(2)
-            with cols[0]:
-                params.video_clip_duration = st.select_slider(
-                    tr("Clip Duration (seconds)"), 
-                    options=[2, 3, 4, 5, 6, 7, 8, 9, 10],
-                    value=3
-                )
-            with cols[1]:
-                params.video_count = st.select_slider(
-                    tr("Videos to Generate"),
-                    options=[1, 2, 3, 4, 5],
-                    value=1
-                )
 
         with col2:
             # Background music settings

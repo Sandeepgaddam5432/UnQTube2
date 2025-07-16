@@ -174,34 +174,32 @@ def get_video_materials(task_id, params, video_terms, audio_duration):
             return None
         return [material_info.url for material_info in materials]
     else:
-        logger.info(f"\n\n## downloading videos from {params.video_source}")
-        downloaded_videos = material.download_videos(
+        logger.info(f"\n\n## downloading images from {params.video_source}")
+        # Use the target_duration parameter if available
+        target_duration = params.target_duration if params.target_duration else audio_duration
+        downloaded_images = material.download_images(
             task_id=task_id,
             search_terms=video_terms,
             source=params.video_source,
             video_aspect=params.video_aspect,
             video_contact_mode=params.video_concat_mode,
             audio_duration=audio_duration * params.video_count,
-            max_clip_duration=params.video_clip_duration,
+            target_duration=target_duration,
         )
-        if not downloaded_videos:
+        if not downloaded_images:
             sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
             logger.error(
-                "failed to download videos, maybe the network is not available. if you are in China, please use a VPN."
+                "failed to download images, maybe the network is not available. if you are in China, please use a VPN."
             )
             return None
-        return downloaded_videos
+        return downloaded_images
 
 
 def generate_final_videos(
-    task_id, params, downloaded_videos, audio_file, subtitle_path
+    task_id, params, downloaded_materials, audio_file, subtitle_path
 ):
     final_video_paths = []
     combined_video_paths = []
-    video_concat_mode = (
-        params.video_concat_mode if params.video_count == 1 else VideoConcatMode.random
-    )
-    video_transition_mode = params.video_transition_mode
     video_resolution = params.video_resolution
 
     _progress = 50
@@ -210,27 +208,23 @@ def generate_final_videos(
         combined_video_path = path.join(
             utils.task_dir(task_id), f"combined-{index}.mp4"
         )
-        logger.info(f"\n\n## combining video with ULTIMATE architecture: {index} => {combined_video_path}")
+        logger.info(f"\n\n## creating video from images: {index} => {combined_video_path}")
         
-        # Define progress callback function for video combining
+        # Define progress callback function for video creation
         def progress_callback(progress_value):
             # Calculate overall progress (50% to 75% of total task)
             overall_progress = _progress + (progress_value * 25 / params.video_count)
             sm.state.update_task(task_id, progress=int(overall_progress))
         
-        # Use the new ultra-fast video assembly function
-        video.combine_videos_ultra_fast(
+        # Use the image-based video assembly function
+        video.combine_images_to_video(
             combined_video_path=combined_video_path,
-            video_paths=downloaded_videos,
+            image_paths=downloaded_materials,
             audio_file=audio_file,
             video_aspect=params.video_aspect,
-            video_concat_mode=video_concat_mode,
-            video_transition_mode=video_transition_mode,
             video_resolution=video_resolution,
-            max_clip_duration=params.video_clip_duration,
-            threads=params.n_threads,
+            target_duration=params.target_duration,
             progress_callback=progress_callback,
-            target_duration=params.target_duration,  # Pass target_duration to video assembly
         )
 
         _progress += 50 / params.video_count / 2
@@ -238,7 +232,7 @@ def generate_final_videos(
 
         final_video_path = path.join(utils.task_dir(task_id), f"final-{index}.mp4")
 
-        logger.info(f"\n\n## generating video: {index} => {final_video_path}")
+        logger.info(f"\n\n## generating video with subtitles: {index} => {final_video_path}")
         video.generate_video(
             video_path=combined_video_path,
             audio_path=audio_file,

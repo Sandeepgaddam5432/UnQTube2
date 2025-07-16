@@ -1,5 +1,5 @@
 [app]
-video_source = "pexels" # "pexels" or "pixabay"
+image_source = "pexels" # "pexels" or "pixabay"
 
 # Whether to hide configuration panel
 hide_config = false
