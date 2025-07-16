@@ -145,11 +145,17 @@ def generate_subtitle(task_id, params, subtitle_script, sub_maker, audio_file):
 
     if subtitle_provider == "whisper" or subtitle_fallback:
         whisper_model_size = config.app.get("whisper_model_size", "base")
+        
+        # Normalize the language code for Whisper
+        whisper_language_code = None
+        if params.video_language:
+            whisper_language_code = params.video_language.split('-')[0]  # This converts 'te-IN' to 'te'
+        
         subtitle.create(
             audio_file=audio_file, 
             subtitle_file=subtitle_path,
             model_size=whisper_model_size,
-            language=params.video_language  # Pass the video language to prevent whisper hallucination
+            language=whisper_language_code  # Pass the NORMALIZED code here
         )
         logger.info("\n\n## correcting subtitle")
         subtitle.correct(subtitle_file=subtitle_path, video_script=subtitle_script)
