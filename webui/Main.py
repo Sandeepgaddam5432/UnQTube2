@@ -46,19 +46,646 @@ st.set_page_config(
 
 streamlit_style = """
 <style>
-h1 {
+/* ============================================
+   🎨 UnQTube2 - CYBERPUNK FUTURISTIC THEME
+   ============================================ */
+
+/* Google Fonts Import */
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Roboto:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ============================================
+   🌌 ROOT VARIABLES - Neon Color Palette
+   ============================================ */
+:root {
+    --bg-primary: #0e1117;
+    --bg-secondary: #161b22;
+    --bg-tertiary: #1a1f2e;
+    --neon-blue: #00d4ff;
+    --neon-purple: #bd00ff;
+    --neon-pink: #ff006e;
+    --neon-cyan: #00fff2;
+    --neon-green: #39ff14;
+    --text-primary: #ffffff;
+    --text-secondary: #a0aec0;
+    --text-muted: #6b7280;
+    --glass-bg: rgba(255, 255, 255, 0.03);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --glass-shadow: 0 8px 32px rgba(0, 212, 255, 0.15);
+    --gradient-neon: linear-gradient(135deg, var(--neon-blue) 0%, var(--neon-purple) 50%, var(--neon-pink) 100%);
+    --gradient-glow: linear-gradient(135deg, rgba(0, 212, 255, 0.3) 0%, rgba(189, 0, 255, 0.3) 100%);
+}
+
+/* ============================================
+   🎭 ANIMATIONS - Keyframes
+   ============================================ */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideInLeft {
+    from {
+        opacity: 0;
+        transform: translateX(-30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+@keyframes neonPulse {
+    0%, 100% {
+        box-shadow: 0 0 5px var(--neon-blue),
+                    0 0 10px var(--neon-blue),
+                    0 0 20px var(--neon-blue);
+    }
+    50% {
+        box-shadow: 0 0 10px var(--neon-blue),
+                    0 0 20px var(--neon-blue),
+                    0 0 40px var(--neon-blue),
+                    0 0 60px var(--neon-purple);
+    }
+}
+
+@keyframes gradientShift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
+@keyframes glowBorder {
+    0%, 100% {
+        border-color: var(--neon-blue);
+        box-shadow: 0 0 15px rgba(0, 212, 255, 0.3);
+    }
+    50% {
+        border-color: var(--neon-purple);
+        box-shadow: 0 0 25px rgba(189, 0, 255, 0.4);
+    }
+}
+
+@keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-5px); }
+}
+
+@keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
+/* ============================================
+   📱 GLOBAL STYLES
+   ============================================ */
+.stApp {
+    background: var(--bg-primary) !important;
+    font-family: 'Roboto', sans-serif !important;
+}
+
+.stApp > header {
+    background: transparent !important;
+}
+
+/* Main content area */
+.main .block-container {
+    padding: 2rem 3rem !important;
+    max-width: 1400px !important;
+    animation: fadeIn 0.8s ease-out;
+}
+
+/* ============================================
+   📝 TYPOGRAPHY
+   ============================================ */
+h1, h2, h3, h4, h5, h6 {
+    font-family: 'Orbitron', sans-serif !important;
+    background: var(--gradient-neon);
+    background-size: 200% 200%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: gradientShift 4s ease infinite;
+    text-shadow: none !important;
     padding-top: 0 !important;
 }
+
+h1 {
+    font-size: 2.5rem !important;
+    font-weight: 800 !important;
+    letter-spacing: 3px !important;
+    margin-bottom: 1.5rem !important;
+    animation: fadeInUp 0.8s ease-out, gradientShift 4s ease infinite;
+}
+
+h2 {
+    font-size: 1.5rem !important;
+    font-weight: 600 !important;
+    letter-spacing: 1px !important;
+}
+
+h3 {
+    font-size: 1.2rem !important;
+    font-weight: 500 !important;
+}
+
+p, span, label, .stMarkdown {
+    color: var(--text-secondary) !important;
+    font-family: 'Roboto', sans-serif !important;
+}
+
+/* ============================================
+   🔘 BUTTONS - Neon Glow Effect
+   ============================================ */
+.stButton > button {
+    font-family: 'Orbitron', sans-serif !important;
+    background: linear-gradient(135deg, rgba(0, 212, 255, 0.1) 0%, rgba(189, 0, 255, 0.1) 100%) !important;
+    border: 1px solid var(--neon-blue) !important;
+    border-radius: 12px !important;
+    color: var(--neon-blue) !important;
+    padding: 0.75rem 2rem !important;
+    font-weight: 600 !important;
+    letter-spacing: 1px !important;
+    text-transform: uppercase !important;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    position: relative !important;
+    overflow: hidden !important;
+    box-shadow: 0 0 15px rgba(0, 212, 255, 0.2) !important;
+}
+
+.stButton > button:hover {
+    background: linear-gradient(135deg, var(--neon-blue) 0%, var(--neon-purple) 100%) !important;
+    border-color: var(--neon-cyan) !important;
+    color: var(--bg-primary) !important;
+    transform: translateY(-2px) !important;
+    box-shadow: 0 0 30px rgba(0, 212, 255, 0.5),
+                0 0 60px rgba(189, 0, 255, 0.3),
+                inset 0 0 20px rgba(255, 255, 255, 0.1) !important;
+    animation: neonPulse 1.5s ease-in-out infinite;
+}
+
+.stButton > button:active {
+    transform: translateY(0) !important;
+}
+
+/* Primary Button - Extra Glow */
+.stButton > button[kind="primary"],
+.stButton > button[data-testid="baseButton-primary"] {
+    background: linear-gradient(135deg, var(--neon-blue) 0%, var(--neon-purple) 100%) !important;
+    color: var(--bg-primary) !important;
+    font-size: 1.1rem !important;
+    padding: 1rem 2.5rem !important;
+    animation: float 3s ease-in-out infinite;
+}
+
+.stButton > button[kind="primary"]:hover,
+.stButton > button[data-testid="baseButton-primary"]:hover {
+    background: linear-gradient(135deg, var(--neon-cyan) 0%, var(--neon-pink) 100%) !important;
+    box-shadow: 0 0 40px rgba(0, 212, 255, 0.7),
+                0 0 80px rgba(189, 0, 255, 0.5),
+                0 0 120px rgba(255, 0, 110, 0.3) !important;
+}
+
+/* ============================================
+   📋 INPUT FIELDS - Glassmorphism
+   ============================================ */
+.stTextInput > div > div > input,
+.stTextArea > div > div > textarea,
+.stSelectbox > div > div,
+.stMultiSelect > div > div {
+    background: var(--glass-bg) !important;
+    border: 1px solid var(--glass-border) !important;
+    border-radius: 12px !important;
+    color: var(--text-primary) !important;
+    font-family: 'Roboto', sans-serif !important;
+    padding: 0.75rem 1rem !important;
+    backdrop-filter: blur(10px) !important;
+    -webkit-backdrop-filter: blur(10px) !important;
+    transition: all 0.3s ease !important;
+}
+
+.stTextInput > div > div > input:focus,
+.stTextArea > div > div > textarea:focus {
+    border-color: var(--neon-blue) !important;
+    box-shadow: 0 0 20px rgba(0, 212, 255, 0.3),
+                inset 0 0 10px rgba(0, 212, 255, 0.1) !important;
+    animation: glowBorder 2s ease-in-out infinite;
+}
+
+.stTextInput > div > div > input::placeholder,
+.stTextArea > div > div > textarea::placeholder {
+    color: var(--text-muted) !important;
+    font-style: italic;
+}
+
+/* ============================================
+   🎚️ SLIDERS - Neon Track
+   ============================================ */
+.stSlider > div > div > div > div {
+    background: linear-gradient(90deg, var(--neon-blue) 0%, var(--neon-purple) 100%) !important;
+    height: 6px !important;
+    border-radius: 3px !important;
+}
+
+.stSlider > div > div > div > div > div {
+    background: var(--neon-cyan) !important;
+    border: 2px solid var(--neon-blue) !important;
+    box-shadow: 0 0 15px var(--neon-blue) !important;
+    width: 20px !important;
+    height: 20px !important;
+    border-radius: 50% !important;
+    transition: all 0.2s ease !important;
+}
+
+.stSlider > div > div > div > div > div:hover {
+    transform: scale(1.2) !important;
+    box-shadow: 0 0 25px var(--neon-blue), 0 0 40px var(--neon-purple) !important;
+}
+
+/* ============================================
+   ☑️ CHECKBOXES - Custom Neon Style
+   ============================================ */
+.stCheckbox > label > div[data-testid="stCheckbox"] > div {
+    border: 2px solid var(--neon-blue) !important;
+    border-radius: 6px !important;
+    background: var(--glass-bg) !important;
+    transition: all 0.3s ease !important;
+}
+
+.stCheckbox > label > div[data-testid="stCheckbox"] > div:hover {
+    box-shadow: 0 0 15px rgba(0, 212, 255, 0.4) !important;
+}
+
+/* ============================================
+   📑 TABS - Futuristic Design
+   ============================================ */
+.stTabs [data-baseweb="tab-list"] {
+    background: var(--glass-bg) !important;
+    border-radius: 16px !important;
+    padding: 0.5rem !important;
+    border: 1px solid var(--glass-border) !important;
+    gap: 0.5rem !important;
+}
+
+.stTabs [data-baseweb="tab-list"] button {
+    font-family: 'Orbitron', sans-serif !important;
+    font-size: 0.9rem !important;
+    font-weight: 500 !important;
+    color: var(--text-secondary) !important;
+    background: transparent !important;
+    border-radius: 10px !important;
+    padding: 0.75rem 1.5rem !important;
+    transition: all 0.3s ease !important;
+    border: 1px solid transparent !important;
+}
+
+.stTabs [data-baseweb="tab-list"] button:hover {
+    color: var(--neon-blue) !important;
+    background: rgba(0, 212, 255, 0.1) !important;
+}
+
+.stTabs [data-baseweb="tab-list"] button[aria-selected="true"] {
+    background: linear-gradient(135deg, rgba(0, 212, 255, 0.2) 0%, rgba(189, 0, 255, 0.2) 100%) !important;
+    color: var(--neon-cyan) !important;
+    border: 1px solid var(--neon-blue) !important;
+    box-shadow: 0 0 20px rgba(0, 212, 255, 0.3) !important;
+}
+
 .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p {
-    font-size: 1.15rem;
+    font-size: 0.95rem !important;
 }
+
+/* ============================================
+   📊 EXPANDERS - Glass Card Style
+   ============================================ */
+.streamlit-expanderHeader {
+    font-family: 'Orbitron', sans-serif !important;
+    background: var(--glass-bg) !important;
+    border: 1px solid var(--glass-border) !important;
+    border-radius: 12px !important;
+    color: var(--neon-blue) !important;
+    transition: all 0.3s ease !important;
+}
+
+.streamlit-expanderHeader:hover {
+    background: rgba(0, 212, 255, 0.1) !important;
+    border-color: var(--neon-blue) !important;
+    box-shadow: 0 0 20px rgba(0, 212, 255, 0.2) !important;
+}
+
+.streamlit-expanderContent {
+    background: var(--glass-bg) !important;
+    border: 1px solid var(--glass-border) !important;
+    border-top: none !important;
+    border-radius: 0 0 12px 12px !important;
+    animation: fadeIn 0.3s ease-out;
+}
+
+/* ============================================
+   📦 CONTAINERS - Glassmorphism Cards
+   ============================================ */
+[data-testid="stVerticalBlock"] > div:has(> .stMarkdown),
+[data-testid="stHorizontalBlock"] {
+    animation: fadeInUp 0.6s ease-out;
+}
+
+.stContainer, div[data-testid="stExpander"] {
+    animation: slideInLeft 0.5s ease-out;
+}
+
+/* Status containers */
+.stStatus {
+    background: var(--glass-bg) !important;
+    border: 1px solid var(--neon-blue) !important;
+    border-radius: 12px !important;
+    box-shadow: 0 0 30px rgba(0, 212, 255, 0.2) !important;
+}
+
+/* ============================================
+   📊 SIDEBAR - Neon Panel
+   ============================================ */
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, var(--bg-secondary) 0%, var(--bg-primary) 100%) !important;
+    border-right: 1px solid var(--glass-border) !important;
+    animation: slideInLeft 0.6s ease-out;
+}
+
+[data-testid="stSidebar"] > div:first-child {
+    background: transparent !important;
+    padding: 1.5rem !important;
+}
+
+[data-testid="stSidebar"] .stSubheader {
+    font-family: 'Orbitron', sans-serif !important;
+    color: var(--neon-cyan) !important;
+    font-size: 0.9rem !important;
+    letter-spacing: 2px !important;
+    text-transform: uppercase !important;
+    border-bottom: 1px solid var(--glass-border) !important;
+    padding-bottom: 0.5rem !important;
+    margin-bottom: 1rem !important;
+}
+
+/* ============================================
+   📋 SELECTBOX - Custom Dropdown
+   ============================================ */
+.stSelectbox [data-baseweb="select"] {
+    background: var(--glass-bg) !important;
+    border: 1px solid var(--glass-border) !important;
+    border-radius: 12px !important;
+}
+
+.stSelectbox [data-baseweb="select"]:hover {
+    border-color: var(--neon-blue) !important;
+}
+
+div[data-baseweb="popover"] {
+    background: var(--bg-secondary) !important;
+    border: 1px solid var(--neon-blue) !important;
+    border-radius: 12px !important;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5),
+                0 0 30px rgba(0, 212, 255, 0.2) !important;
+}
+
+div[data-baseweb="popover"] li {
+    color: var(--text-secondary) !important;
+    transition: all 0.2s ease !important;
+}
+
+div[data-baseweb="popover"] li:hover {
+    background: rgba(0, 212, 255, 0.1) !important;
+    color: var(--neon-blue) !important;
+}
+
+/* ============================================
+   ⚠️ ALERTS & MESSAGES
+   ============================================ */
+.stAlert, .stSuccess, .stWarning, .stError, .stInfo {
+    border-radius: 12px !important;
+    border: 1px solid !important;
+    backdrop-filter: blur(10px) !important;
+    animation: fadeInUp 0.4s ease-out;
+}
+
+div[data-testid="stNotification"] {
+    background: var(--glass-bg) !important;
+    border: 1px solid var(--neon-blue) !important;
+    border-radius: 12px !important;
+}
+
+/* Success message */
+.stSuccess {
+    background: rgba(57, 255, 20, 0.1) !important;
+    border-color: var(--neon-green) !important;
+}
+
+/* Warning message */
+.stWarning {
+    background: rgba(255, 165, 0, 0.1) !important;
+    border-color: #ffa500 !important;
+}
+
+/* Error message */
+.stError {
+    background: rgba(255, 0, 110, 0.1) !important;
+    border-color: var(--neon-pink) !important;
+}
+
+/* Info message */
+.stInfo {
+    background: rgba(0, 212, 255, 0.1) !important;
+    border-color: var(--neon-blue) !important;
+}
+
+/* ============================================
+   📊 PROGRESS BAR - Neon Glow
+   ============================================ */
+.stProgress > div > div > div {
+    background: linear-gradient(90deg, var(--neon-blue) 0%, var(--neon-purple) 50%, var(--neon-pink) 100%) !important;
+    background-size: 200% 100% !important;
+    animation: shimmer 2s linear infinite !important;
+    border-radius: 10px !important;
+    box-shadow: 0 0 20px rgba(0, 212, 255, 0.5) !important;
+}
+
+.stProgress > div > div {
+    background: var(--glass-bg) !important;
+    border-radius: 10px !important;
+}
+
+/* ============================================
+   🎥 VIDEO PLAYER
+   ============================================ */
+.stVideo {
+    border-radius: 16px !important;
+    overflow: hidden !important;
+    border: 2px solid var(--glass-border) !important;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3),
+                0 0 30px rgba(0, 212, 255, 0.1) !important;
+    transition: all 0.3s ease !important;
+}
+
+.stVideo:hover {
+    border-color: var(--neon-blue) !important;
+    box-shadow: 0 15px 50px rgba(0, 0, 0, 0.4),
+                0 0 50px rgba(0, 212, 255, 0.2) !important;
+    transform: scale(1.02);
+}
+
+/* ============================================
+   📝 CODE BLOCKS
+   ============================================ */
+.stCodeBlock, code {
+    font-family: 'JetBrains Mono', monospace !important;
+    background: var(--bg-secondary) !important;
+    border: 1px solid var(--glass-border) !important;
+    border-radius: 10px !important;
+}
+
+/* ============================================
+   🎨 CUSTOM CLASSES - Main Title & Generate Button
+   ============================================ */
 .main-title {
-    text-align: center;
-    margin-bottom: 2rem;
+    text-align: center !important;
+    margin-bottom: 2.5rem !important;
+    font-size: 3rem !important;
+    animation: fadeInUp 0.8s ease-out;
 }
+
 .generate-btn {
-    margin-top: 2rem;
+    margin-top: 2rem !important;
 }
+
+.generate-btn button {
+    width: 100% !important;
+    font-size: 1.3rem !important;
+    padding: 1.2rem 2rem !important;
+    background: linear-gradient(135deg, var(--neon-blue) 0%, var(--neon-purple) 50%, var(--neon-pink) 100%) !important;
+    background-size: 200% 200% !important;
+    animation: gradientShift 3s ease infinite, float 4s ease-in-out infinite !important;
+}
+
+/* ============================================
+   🔧 SPINNER - Neon Loading
+   ============================================ */
+.stSpinner > div {
+    border-color: var(--neon-blue) transparent transparent transparent !important;
+}
+
+/* ============================================
+   🎨 SCROLLBAR - Custom Neon Style
+   ============================================ */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-secondary);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, var(--neon-blue) 0%, var(--neon-purple) 100%);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, var(--neon-cyan) 0%, var(--neon-pink) 100%);
+}
+
+/* ============================================
+   🌟 SPECIAL EFFECTS - Particles Background
+   ============================================ */
+.stApp::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: 
+        radial-gradient(ellipse at 20% 80%, rgba(0, 212, 255, 0.08) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 20%, rgba(189, 0, 255, 0.08) 0%, transparent 50%),
+        radial-gradient(ellipse at 50% 50%, rgba(255, 0, 110, 0.03) 0%, transparent 60%);
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* ============================================
+   📱 RESPONSIVE TWEAKS
+   ============================================ */
+@media (max-width: 768px) {
+    h1 {
+        font-size: 1.8rem !important;
+    }
+    
+    .main .block-container {
+        padding: 1rem !important;
+    }
+    
+    .stButton > button {
+        padding: 0.5rem 1rem !important;
+        font-size: 0.9rem !important;
+    }
+}
+
+/* ============================================
+   ✨ MICRO-INTERACTIONS
+   ============================================ */
+.stDownloadButton > button {
+    background: linear-gradient(135deg, var(--neon-green) 0%, var(--neon-cyan) 100%) !important;
+    border: none !important;
+    color: var(--bg-primary) !important;
+}
+
+.stDownloadButton > button:hover {
+    box-shadow: 0 0 30px rgba(57, 255, 20, 0.5) !important;
+    transform: translateY(-3px) !important;
+}
+
+/* Color picker styling */
+.stColorPicker > div {
+    border-radius: 10px !important;
+    overflow: hidden;
+}
+
+/* File uploader */
+.stFileUploader > div {
+    background: var(--glass-bg) !important;
+    border: 2px dashed var(--neon-blue) !important;
+    border-radius: 12px !important;
+    transition: all 0.3s ease !important;
+}
+
+.stFileUploader > div:hover {
+    border-color: var(--neon-purple) !important;
+    background: rgba(0, 212, 255, 0.05) !important;
+}
+
+/* Toast notifications */
+.stToast {
+    background: var(--bg-secondary) !important;
+    border: 1px solid var(--neon-blue) !important;
+    border-radius: 12px !important;
+    box-shadow: 0 0 30px rgba(0, 212, 255, 0.3) !important;
+}
+
 </style>
 """
 st.markdown(streamlit_style, unsafe_allow_html=True)
