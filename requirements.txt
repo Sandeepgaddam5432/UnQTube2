@@ -1,6 +1,15 @@
 moviepy==2.1.2
 streamlit==1.45.0
-edge_tts==6.1.19
+# 6.1.19 is dead: Microsoft now enforces the Sec-MS-GEC anti-abuse token and
+# rejects old clients with 403 'Invalid response status'. 7.x refreshes the
+# token and corrects server clock skew. Edge TTS is now only a fallback.
+edge_tts>=7.2.3
+# Kokoro-82M: Apache-2.0 open-weight neural TTS, runs fully offline, no API
+# key, top ranked open-weight model on TTS preference leaderboards.
+kokoro>=0.9.4
+misaki[en]>=0.9.4
+soundfile>=0.12.1
+numpy>=1.24.0
 fastapi==0.115.6
 uvicorn==0.32.1
 openai==1.56.1
