@@ -9,6 +9,7 @@ from app.config import config
 from app.models import const
 from app.models.schema import VideoConcatMode, VideoParams
 from app.services import llm, material, subtitle, video, voice
+from app.services import kokoro_tts
 from app.services import state as sm
 from app.utils import utils
 from app.services.bulletproof_assembler import BulletproofVideoAssembler
@@ -94,7 +95,7 @@ def save_script_data(task_id, voice_over_script, subtitle_script, video_terms, p
 def generate_audio(task_id, params, voice_over_script):
     logger.info("\n\n## generating audio")
     audio_file = path.join(utils.task_dir(task_id), "audio.mp3")
-    
+
     # Smart voice auto-correction: check if voice is compatible with language
     voice_name = voice.parse_voice_name(params.voice_name)
     if params.video_language and voice_name:
@@ -105,19 +106,60 @@ def generate_audio(task_id, params, voice_over_script):
             voice_name = compatible_voice
     else:
         voice_name = voice.parse_voice_name(params.voice_name)
-    
-    sub_maker = voice.tts(
-        text=voice_over_script,
-        voice_name=voice_name,
-        voice_rate=params.voice_rate,
-        voice_file=audio_file,
-    )
+
+    # TTS engine selection.
+    #
+    # Default is Kokoro-82M: Apache-2.0, runs fully offline, no API key, and
+    # unlike Edge TTS it cannot be revoked by Microsoft. Edge TTS started
+    # returning 403 'Invalid response status' once the Sec-MS-GEC anti-abuse
+    # token was enforced, which made the whole pipeline fail at this step.
+    #
+    # Whichever engine runs first, the other one is used as a fallback, so a
+    # single broken provider can no longer kill the task.
+    engine = str(config.app.get("tts_engine", "kokoro")).strip().lower()
+
+    def _try_kokoro():
+        return kokoro_tts.synthesize(
+            text=voice_over_script,
+            voice_name=voice_name,
+            voice_rate=params.voice_rate,
+            voice_file=audio_file,
+            language=params.video_language,
+        )
+
+    def _try_edge():
+        return voice.tts(
+            text=voice_over_script,
+            voice_name=voice_name,
+            voice_rate=params.voice_rate,
+            voice_file=audio_file,
+        )
+
+    if engine == "edge":
+        order = [("edge", _try_edge), ("kokoro", _try_kokoro)]
+    else:
+        order = [("kokoro", _try_kokoro), ("edge", _try_edge)]
+
+    sub_maker = None
+    for engine_name, runner in order:
+        logger.info(f"tts engine: {engine_name}")
+        try:
+            sub_maker = runner()
+        except Exception as e:
+            logger.error(f"tts engine {engine_name} raised: {e}")
+            sub_maker = None
+        if sub_maker is not None:
+            logger.success(f"audio generated with {engine_name}")
+            break
+        logger.warning(f"tts engine {engine_name} failed, trying the next one")
+
     if sub_maker is None:
         sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
         logger.error(
-            """failed to generate audio:
+            """failed to generate audio with every available engine:
 1. check if the language of the voice matches the language of the video script.
-2. check if the network is available. If you are in China, it is recommended to use a VPN and enable the global traffic mode.
+2. Kokoro needs espeak-ng installed (apt-get install -y espeak-ng).
+3. Edge TTS may be blocked by Microsoft (403); this is expected and Kokoro should cover it.
         """.strip()
         )
         return None, None, None
