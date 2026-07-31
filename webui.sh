@@ -5,4 +5,5 @@
 
 # export HF_ENDPOINT=https://hf-mirror.com
 
-streamlit run ./webui/Main.py --browser.serverAddress="0.0.0.0" --server.enableCORS=True --browser.gatherUsageStats=False
+# webui/App.py runs webui/Main.py with the Apple glassmorphism theme applied.
+streamlit run ./webui/App.py --browser.serverAddress='0.0.0.0' --server.enableCORS=True --browser.gatherUsageStats=False
